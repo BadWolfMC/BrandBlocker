@@ -47,8 +47,15 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
 
         getLogger().info("Player '" + p.getName() + "' joined.");
         
-        if (!getConfig().getBoolean("enable")) return;
-        if (getConfig().getBoolean("geyser-support") && p.getName().contains(Objects.requireNonNull(getConfig().getString("geyser-prefix")))) return;
+        if (!getConfig().getBoolean("enable")) {
+            getLogger().info("BrandBlocker is disabled in the config. Skipping checks for player '" + p.getName() + "'.");
+            return;
+        }
+
+        if (getConfig().getBoolean("geyser-support") && p.getName().contains(Objects.requireNonNull(getConfig().getString("geyser-prefix")))) {
+            getLogger().info("Player '" + p.getName() + "' matches Geyser prefix. Skipping checks.");
+            return;
+        }
 
         // Introduce a delay to ensure the client brand is registered
         new BukkitRunnable() {
@@ -61,6 +68,7 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
 
                 final String brand = player_brands.get(p.getName());
                 getLogger().info("Player '" + p.getName() + "' is using brand '" + brand + "'.");
+
                 final Iterator<String> iterator = getConfig().getStringList("blocked-brands").iterator();
 
                 switch (getConfig().getString("mode")) {
@@ -68,6 +76,7 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         boolean blacklisted = false;
                         while (iterator.hasNext()) {
                             String str = iterator.next();
+                            getLogger().info("Checking if brand '" + brand + "' contains blacklisted entry '" + str + "'.");
                             if (brand.contains(str)) {
                                 blacklisted = true;
                                 break;
@@ -75,7 +84,11 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         }
 
                         if (blacklisted) {
-                            if (p.hasPermission("brandblocker.bypass")) return;
+                            if (p.hasPermission("brandblocker.bypass")) {
+                                getLogger().info("Player '" + p.getName() + "' has bypass permission. Skipping kick.");
+                                return;
+                            }
+
                             String kickCmd = getConfig().getString("kick-command");
                             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
                             getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
@@ -86,6 +99,7 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         boolean whitelisted = false;
                         while (iterator.hasNext()) {
                             String str = iterator.next();
+                            getLogger().info("Checking if brand '" + brand + "' contains whitelisted entry '" + str + "'.");
                             if (brand.contains(str)) {
                                 whitelisted = true;
                                 break;
@@ -93,7 +107,11 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         }
 
                         if (!whitelisted) {
-                            if (p.hasPermission("brandblocker.bypass")) return;
+                            if (p.hasPermission("brandblocker.bypass")) {
+                                getLogger().info("Player '" + p.getName() + "' has bypass permission. Skipping kick.");
+                                return;
+                            }
+
                             String kickCmd = getConfig().getString("kick-command");
                             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
                             getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
