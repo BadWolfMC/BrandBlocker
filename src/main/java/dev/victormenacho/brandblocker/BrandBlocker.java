@@ -62,11 +62,13 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                 while (iterator.hasNext()) {
                     String str = iterator.next();
                     if (brand.contains(str)) {
-                        if (p.hasPermission("brandblocker.bypass")) return;
+                        if (p.hasPermission("brandblocker.bypass")) return; // Bypass check
                         String kickCmd = getConfig().getString("kick-command");
+                        // Execute the kick command
                         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
+                        // Log the detection
                         getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
-                        return;
+                        return; // Exit after processing the blacklisted client
                     }
                 }
                 break;
@@ -76,9 +78,11 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                     if (brand.contains(str))
                         return;
                 }
-                if (p.hasPermission("brandblocker.bypass")) return;
+                if (p.hasPermission("brandblocker.bypass")) return; // Bypass check
                 String kickCmd = getConfig().getString("kick-command");
+                // Execute the kick command
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
+                // Log the detection
                 getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
                 break;
         }
