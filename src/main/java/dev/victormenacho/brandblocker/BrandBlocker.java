@@ -52,52 +52,35 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
 
         if (!getConfig().getBoolean("enable")) return;
         if (getConfig().getBoolean("geyser-support") && p.getName().contains(Objects.requireNonNull(getConfig().getString("geyser-prefix")))) return;
-
-        // Ensure the brand is recorded for the player
-        if (!player_brands.containsKey(p.getName())) {
-            getLogger().warning("No brand detected for player " + p.getName() + ". Ensure the client brand is being registered correctly.");
-            return;
-        }
+        if (!player_brands.containsKey(p.getName())) return;
 
         final String brand = player_brands.get(p.getName());
         final Iterator<String> iterator = getConfig().getStringList("blocked-brands").iterator();
 
         switch (getConfig().getString("mode")) {
             case "blacklist":
-                boolean blacklisted = false;
                 while (iterator.hasNext()) {
                     String str = iterator.next();
                     if (brand.contains(str)) {
-                        blacklisted = true;
-                        break;
+                        if(p.hasPermission("brandblocker.bypass")) return;
+                        String kickCmd = getConfig().getString("kick-command");
+                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
+                        getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
+                        return;
                     }
                 }
-
-                if (blacklisted) {
-                    if (p.hasPermission("brandblocker.bypass")) return;
-                    String kickCmd = getConfig().getString("kick-command");
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
-                    getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
-                }
-                return;
-
+                break;
             case "whitelist":
-                boolean whitelisted = false;
                 while (iterator.hasNext()) {
                     String str = iterator.next();
-                    if (brand.contains(str)) {
-                        whitelisted = true;
-                        break;
-                    }
+                    if (brand.contains(str))
+                        return;
                 }
-
-                if (!whitelisted) {
-                    if (p.hasPermission("brandblocker.bypass")) return;
-                    String kickCmd = getConfig().getString("kick-command");
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
-                    getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
-                }
-                return;
+                if(p.hasPermission("brandblocker.bypass")) return;
+                String kickCmd = getConfig().getString("kick-command");
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
+                getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
+                break;
         }
     }
 
