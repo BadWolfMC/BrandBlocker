@@ -46,11 +46,6 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
         final Player p = e.getPlayer();
 
         getLogger().info("Player '" + p.getName() + "' joined.");
-        
-        if (!getConfig().getBoolean("enable")) {
-            getLogger().info("BrandBlocker is disabled in the config. Skipping checks for player '" + p.getName() + "'.");
-            return;
-        }
 
         if (getConfig().getBoolean("geyser-support") && p.getName().contains(Objects.requireNonNull(getConfig().getString("geyser-prefix")))) {
             getLogger().info("Player '" + p.getName() + "' matches Geyser prefix. Skipping checks.");
@@ -76,7 +71,6 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         boolean blacklisted = false;
                         while (iterator.hasNext()) {
                             String str = iterator.next();
-                            getLogger().info("Checking if brand '" + brand + "' contains blacklisted entry '" + str + "'.");
                             if (brand.contains(str)) {
                                 blacklisted = true;
                                 break;
@@ -99,7 +93,6 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         boolean whitelisted = false;
                         while (iterator.hasNext()) {
                             String str = iterator.next();
-                            getLogger().info("Checking if brand '" + brand + "' contains whitelisted entry '" + str + "'.");
                             if (brand.contains(str)) {
                                 whitelisted = true;
                                 break;
