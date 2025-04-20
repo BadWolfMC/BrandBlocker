@@ -1,7 +1,7 @@
 name: BrandBlocker
 version: ${project.version}
 main: dev.victormenacho.brandblocker.BrandBlocker
-authors: [ Menacho ]
+authors: [ Menacho, mercurialmusic ]
 description: Block any client brand easily.
 website: victormenacho.dev
 api-version: "1.21"
