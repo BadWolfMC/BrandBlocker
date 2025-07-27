@@ -10,33 +10,21 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Objects;
 
-public class BrandBlocker extends JavaPlugin implements PluginMessageListener, Listener {
+public class BrandBlocker extends JavaPlugin implements Listener {
 
     public String prefix;
-    public final String version = Bukkit.getBukkitVersion().split("-")[0].split("\\.")[1];
-    public HashMap<String, String> player_brands = new HashMap<>();
+    public final String version = Bukkit.getBukkitVersion().split("-")[0];
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         prefix = ChatColor.translateAlternateColorCodes('&', getConfig().getString("prefix"));
-        getLogger().info("Server running version 1."+version);
-
-        if (Integer.parseInt(version) < 13) {
-            Bukkit.getMessenger().registerIncomingPluginChannel(this, "MC|Brand", this);
-            getLogger().info("Registered 1.12- listener");
-        } else {
-            Bukkit.getMessenger().registerIncomingPluginChannel(this, "minecraft:brand", this);
-            getLogger().info("Registered 1.13+ listener");
-        }
+        getLogger().info("Server running version 1." + version);
 
         Bukkit.getServer().getPluginManager().registerEvents(this, this);
     }
@@ -52,16 +40,16 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
             return;
         }
 
-        // Introduce a delay to ensure the client brand is registered
         new BukkitRunnable() {
             @Override
             public void run() {
-                if (!player_brands.containsKey(p.getName())) {
-                    getLogger().warning("No brand detected for player '" + p.getName() + "'. Ensure the client brand is being registered correctly.");
+                final String brand = p.getClientBrandName();
+
+                if (brand == null || brand.isEmpty()) {
+                    getLogger().warning("No brand detected for player '" + p.getName() + "'.");
                     return;
                 }
 
-                final String brand = player_brands.get(p.getName());
                 getLogger().info("Player '" + p.getName() + "' is using brand '" + brand + "'.");
 
                 final Iterator<String> iterator = getConfig().getStringList("blocked-brands").iterator();
@@ -112,7 +100,7 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
                         return;
                 }
             }
-        }.runTaskLater(this, 20L); // Delay of 20 ticks (1 second)
+        }.runTaskLater(this, 20L);
     }
 
     @Override
@@ -120,7 +108,7 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
         if (label.equalsIgnoreCase("brandblocker")) {
             if (args.length == 0) {
                 sender.sendMessage("§4§m--------------------------");
-                sender.sendMessage("§c§lBrandBlocker §7v"+this.getDescription().getVersion());
+                sender.sendMessage("§c§lBrandBlocker §7v" + this.getDescription().getVersion());
                 sender.sendMessage("§7by Menacho");
                 sender.sendMessage("§7");
                 sender.sendMessage("§cUsage §4»");
@@ -130,43 +118,41 @@ public class BrandBlocker extends JavaPlugin implements PluginMessageListener, L
             } else {
                 if (args[0].equalsIgnoreCase("check")) {
                     if (sender.hasPermission("brandblocker.usage")) {
-                        if (!(args.length > 1)) {
-                            sender.sendMessage(prefix+ChatColor.translateAlternateColorCodes('&', getConfig().getString("specify-player-name")));
+                        if (args.length <= 1) {
+                            sender.sendMessage(prefix + ChatColor.translateAlternateColorCodes('&', getConfig().getString("specify-player-name")));
                         } else {
-                            if (player_brands.containsKey(args[1])) {
-                                sender.sendMessage(prefix+ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-succesful")).replace("%player%", args[1]).replace("%brand%", player_brands.get(args[1])));
+                            Player target = Bukkit.getPlayerExact(args[1]);
+                            if (target != null && target.isOnline()) {
+                                String brand = target.getClientBrandName();
+String msg = ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-succesful"))
+    .replace("%player%", args[1])
+    .replace("%brand%", brand != null ? brand : "unknown");
+sender.sendMessage(prefix + msg);
                             } else {
-                                sender.sendMessage(prefix+ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-failed")).replace("%player%", args[1]));
+                                sender.sendMessage(prefix + ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-failed")).replace("%player%", args[1]));
                             }
                         }
                     } else {
-                        sender.sendMessage(prefix+ChatColor.translateAlternateColorCodes('&', getConfig().getString("no-permission")));
+                        sender.sendMessage(prefix + ChatColor.translateAlternateColorCodes('&', getConfig().getString("no-permission")));
                     }
                 } else if (args[0].equalsIgnoreCase("reload")) {
                     if (sender.hasPermission("brandblocker.usage")) {
                         reloadConfig();
                         prefix = ChatColor.translateAlternateColorCodes('&', getConfig().getString("prefix"));
-                        sender.sendMessage(prefix+ChatColor.translateAlternateColorCodes('&', getConfig().getString("config-reload")));
+                        sender.sendMessage(prefix + ChatColor.translateAlternateColorCodes('&', getConfig().getString("config-reload")));
                     } else {
-                        sender.sendMessage(prefix+ChatColor.translateAlternateColorCodes('&', getConfig().getString("no-permission")));
+                        sender.sendMessage(prefix + ChatColor.translateAlternateColorCodes('&', getConfig().getString("no-permission")));
                     }
                 }
             }
-            return false;
+            return true;
         }
         return false;
     }
 
     @Override
-    public void onPluginMessageReceived(String channel, Player p, byte[] msg) {
-        final String brand = new String(msg, StandardCharsets.UTF_8).substring(1);
-        player_brands.put(p.getName(), brand);
-    }
-
-    @Override
     public void onDisable() {
         // Plugin shutdown logic
-        player_brands.clear();
     }
 
 }
