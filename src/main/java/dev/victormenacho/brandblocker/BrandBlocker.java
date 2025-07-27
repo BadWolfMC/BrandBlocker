@@ -8,7 +8,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -33,10 +32,10 @@ public class BrandBlocker extends JavaPlugin implements Listener {
     public void onJoin(PlayerJoinEvent e) {
         final Player p = e.getPlayer();
 
-        getLogger().info("Player '" + p.getName() + "' joined.");
+        getLogger().info(ChatColor.GOLD + "Player '" + p.getName() + "' joined.");
 
         if (getConfig().getBoolean("geyser-support") && p.getName().contains(Objects.requireNonNull(getConfig().getString("geyser-prefix")))) {
-            getLogger().info("Player '" + p.getName() + "' matches Geyser prefix. Skipping checks.");
+            getLogger().info(ChatColor.GOLD + "Player '" + p.getName() + "' matches Geyser prefix. Skipping checks.");
             return;
         }
 
@@ -46,11 +45,11 @@ public class BrandBlocker extends JavaPlugin implements Listener {
                 final String brand = p.getClientBrandName();
 
                 if (brand == null || brand.isEmpty()) {
-                    getLogger().warning("No brand detected for player '" + p.getName() + "'.");
+                    getLogger().warning(ChatColor.RED + "No brand detected for player '" + p.getName() + "'.");
                     return;
                 }
 
-                getLogger().info("Player '" + p.getName() + "' is using brand '" + brand + "'.");
+                getLogger().info(ChatColor.GOLD + "Player '" + p.getName() + "' is using brand '" + brand + "'.");
 
                 final Iterator<String> iterator = getConfig().getStringList("blocked-brands").iterator();
 
@@ -67,13 +66,13 @@ public class BrandBlocker extends JavaPlugin implements Listener {
 
                         if (blacklisted) {
                             if (p.hasPermission("brandblocker.bypass")) {
-                                getLogger().info("Player '" + p.getName() + "' has bypass permission. Skipping kick.");
+                                getLogger().info(ChatColor.GOLD + "Player '" + p.getName() + "' has bypass permission. Skipping kick.");
                                 return;
                             }
 
                             String kickCmd = getConfig().getString("kick-command");
                             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), kickCmd.replace("%player%", p.getName()).replace("%brand%", brand));
-                            getLogger().info(getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
+                            getLogger().info(ChatColor.GOLD + getConfig().getString("console-log").replace("%player%", p.getName()).replace("%brand%", brand));
                         }
                         return;
 
@@ -124,10 +123,10 @@ public class BrandBlocker extends JavaPlugin implements Listener {
                             Player target = Bukkit.getPlayerExact(args[1]);
                             if (target != null && target.isOnline()) {
                                 String brand = target.getClientBrandName();
-String msg = ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-succesful"))
-    .replace("%player%", args[1])
-    .replace("%brand%", brand != null ? brand : "unknown");
-sender.sendMessage(prefix + msg);
+                                String msg = ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-succesful"))
+                                    .replace("%player%", args[1])
+                                    .replace("%brand%", brand != null ? brand : "unknown");
+                                sender.sendMessage(prefix + msg);
                             } else {
                                 sender.sendMessage(prefix + ChatColor.translateAlternateColorCodes('&', getConfig().getString("check-failed")).replace("%player%", args[1]));
                             }
