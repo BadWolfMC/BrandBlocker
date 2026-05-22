@@ -15,16 +15,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
+    - uses: actions/checkout@v6
+    - name: Set up JDK 25
+      uses: actions/setup-java@v5
       with:
-        java-version: '21'
+        java-version: '25'
         distribution: 'temurin'
         cache: maven
     - run: mvn --batch-mode --update-snapshots verify
     - run: mkdir artifact && cp target/*.jar artifact
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v6
       with:
         name: Package
         path: artifact
@@ -32,7 +32,7 @@ jobs:
     # Upload artifacts
     - name: Upload Distributable Jar
       id: upload-final
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: dist
         path: ./artifact/BrandBlocker.jar
