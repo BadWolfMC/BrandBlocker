@@ -4,7 +4,7 @@ main: dev.victormenacho.brandblocker.BrandBlocker
 authors: [ Menacho, mercurialmusic ]
 description: Block any client brand easily.
 website: victormenacho.dev
-api-version: "1.21"
+api-version: "26.2"
 commands:
   brandblocker:
     description: BrandBlocker main command.
