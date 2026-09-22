@@ -16,6 +16,8 @@ final class AdmissionSession {
     private volatile byte[] nonce;
     private volatile boolean cerberusPresent;
     private volatile Integer cerberusProtocol;
+    private volatile boolean playHandshakeRequired;
+    private volatile boolean quarantined;
 
     AdmissionSession(UUID playerId) {
         this.playerId = playerId;
@@ -68,5 +70,21 @@ final class AdmissionSession {
 
     boolean tryMarkChallengeSent() {
         return challengeSent.compareAndSet(false, true);
+    }
+
+    void requirePlayHandshake() {
+        this.playHandshakeRequired = true;
+    }
+
+    boolean playHandshakeRequired() {
+        return playHandshakeRequired;
+    }
+
+    void setQuarantined(boolean quarantined) {
+        this.quarantined = quarantined;
+    }
+
+    boolean quarantined() {
+        return quarantined;
     }
 }

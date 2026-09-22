@@ -1,73 +1,70 @@
-# Phase 0A local smoke-test plan
+# Phase 0A — Test Series 4: supported PLAY-quarantine fallback
 
-This repository is deliberately a feasibility spike, not a production Guardian release.
+## Why this test exists
 
-## Build
+Test Series 3 proved that a stock Fabric 26.2 client can send Guardian custom payloads to Paper 26.2 during CONFIGURATION even when Fabric reports the server did not advertise the channel.
 
-Requirements: JDK 25, a current Gradle 9.x environment (Gradle 9.7.1 is current as of this spike), and internet access for Paper/Fabric dependencies.
+It also proved the reverse path is blocked at Paper's supported plugin-messaging layer: Paper's `PlayerConfigurationConnection.sendPluginMessage(...)` only emits the payload when the client channel appears in `getListeningPluginChannels()`, while the Paper/Fabric CONFIGURATION registration exchange never populates that set.
 
-Windows PowerShell:
+Fabric's code contains an internal mechanism that can force its channel registration packet, but it is not public Fabric API and is deliberately out of bounds for Guardian/Cerberus.
 
-```powershell
-.\gradlew.bat clean test :guardian-paper:jar :cerberus-fabric:build
-```
+This test therefore exercises the project contract's preferred supported fallback:
 
-Linux/macOS:
+1. Keep Fabric/Cerberus **presence + protocol detection in CONFIGURATION**.
+2. Deny Fabric-without-Cerberus before world entry as `CERBERUS_REQUIRED`.
+3. Let a Fabric client with compatible Cerberus enter PLAY in an immediate quarantine.
+4. Cerberus sends a PLAY presence on join.
+5. Guardian sends the fresh nonce challenge using ordinary Paper plugin messaging.
+6. Cerberus responds using Fabric PLAY networking.
+7. Guardian validates and either releases quarantine or disconnects with a distinct reason.
 
-```bash
-./gradlew clean test :guardian-paper:jar :cerberus-fabric:build
-```
+## Run these four cases
 
-Expected artifacts:
+### 1. Vanilla
+Expected:
+- `JAVA_VANILLA`
+- pre-world `ALLOW / VANILLA_POLICY`
+- no Guardian PLAY quarantine
+- normal join
 
-- `guardian-paper/build/libs/guardian-paper-0.0.2-phase0a.jar`
-- `cerberus-fabric/build/libs/cerberus-fabric-0.0.2-phase0a.jar`
+### 2. Fabric without Cerberus
+Expected:
+- `JAVA_FABRIC`
+- no CONFIGURATION presence
+- pre-world `DENY / CERBERUS_REQUIRED`
+- player never reaches PLAY/world
 
-## Test server/client
+### 3. Fabric + Cerberus
+Expected CONFIGURATION logs:
+- CONFIGURATION presence received
+- compatible Cerberus presence detected
+- connection allowed to proceed specifically for PLAY handshake
 
-- Server: standalone Paper 26.2, Java 25, no Velocity.
-- Client A: vanilla 26.2.
-- Client B: Fabric 26.2 + Fabric API, no Cerberus.
-- Client C: Fabric 26.2 + Fabric API + Cerberus.
-- Client D: same as C, launched with JVM argument `-Dcerberus.phase0a.deny=true`.
+Expected PLAY logs:
+- quarantine active immediately on join
+- Cerberus PLAY presence received
+- `listeningChannels` should contain `guardian:challenge`
+- Guardian PLAY challenge sent
+- Cerberus response received
+- `ALLOW / CERBERUS_VERIFIED`
+- quarantine released
 
-The prototype uses provisional channels `guardian:presence`, `guardian:challenge`, and `guardian:response`. They are Phase 0A choices only; the authoritative project contract intentionally defers final channel naming and wire format.
+### 4. Fabric + Cerberus deliberate denial
+Launch client with:
 
-## Required matrix
+`-Dcerberus.phase0a.deny=true`
 
-| Case | Expected Guardian result | Expected world entry |
-|---|---|---|
-| Vanilla | `ALLOW / VANILLA_POLICY` | yes |
-| Fabric, no Cerberus | `DENY / CERBERUS_REQUIRED` | no |
-| Fabric + Cerberus | `ALLOW / CERBERUS_VERIFIED` | yes |
-| Fabric + Cerberus + `-Dcerberus.phase0a.deny=true` | `DENY / MANIFEST_DENIED` | no |
+Expected:
+- same successful CONFIGURATION presence and PLAY challenge/response
+- `DENY / MANIFEST_DENIED`
+- distinct player-facing denial message
 
-Additional diagnostic checks:
+## Optional diagnostics
 
-- Launch Cerberus with `-Dcerberus.phase0a.protocol=99` and expect `CERBERUS_PROTOCOL_UNSUPPORTED`.
-- Launch Cerberus with `-Dcerberus.phase0a.suppressResponse=true` and expect `CERBERUS_TIMEOUT`.
-- Launch Cerberus with `-Dcerberus.phase0a.malformed=true` and expect `MANIFEST_INVALID`.
+- timeout: `-Dcerberus.phase0a.suppressResponse=true`
+- incompatible protocol: `-Dcerberus.phase0a.protocol=99`
+- malformed response: `-Dcerberus.phase0a.malformed=true`
 
-## Evidence to capture
+## Scope of the quarantine
 
-For each connection, save the Paper log lines showing:
-
-1. the brand visible during initial configuration;
-2. the Phase 0A classification;
-3. for Cerberus clients, the client log line from configuration `START` showing `presenceSendable`, `responseSendable`, and `challengeReceivable`;
-4. the Paper log showing receipt of Cerberus presence and the challenge being sent;
-5. the final structured `ALLOW`/`DENY` reason;
-6. whether `PlayerJoinEvent`/world entry occurs (server log is sufficient).
-
-The critical runtime questions are:
-
-- Is Fabric's brand (`fabric`) visible by the Paper configuration events on a real 26.2 client?
-- Does Paper's incoming plugin-channel registration surface to Fabric so `ClientConfigurationNetworking.canSend(PresencePayload.TYPE)` is true at configuration `START`?
-- Does Cerberus `ClientConfigurationNetworking.send(...)` -> Paper's configuration-aware `PluginMessageListener` work in CONFIGURATION?
-- After presence arrives, does Paper `sendPluginMessage` -> Fabric `ClientConfigurationNetworking` work in CONFIGURATION?
-- Does Fabric `responseSender().sendPacket` -> Paper's `PluginMessageListener(PlayerConnection, ...)` work in CONFIGURATION?
-- If a response is still pending, does waiting up to five seconds inside `AsyncPlayerConnectionConfigureEvent` allow the network callback to complete without deadlock?
-- Does `PlayerConnectionValidateLoginEvent#kickMessage` deny before world entry with the distinct expected message?
-- Does `PlayerConnectionCloseEvent` clean sessions for denied/aborted connections?
-
-If any of those transport/lifecycle checks fails, stop Phase 0A and adjust only with supported Paper/Fabric APIs. Do not introduce NMS or packet interception.
+This is deliberately a feasibility quarantine, not production hardening. While pending it cancels movement, block interaction, entity interaction, block breaking/placing, commands, chat, inventory clicks, item drop/pickup, and incoming damage. Production quarantine semantics should be reviewed separately if this transport test succeeds.

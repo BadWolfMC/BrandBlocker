@@ -13,6 +13,9 @@ import com.badwolfmc.guardian.protocol.Response;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationNetworking;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.PacketSender;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
@@ -27,64 +30,113 @@ public final class CerberusClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        registerPayloadTypes();
+        registerConfigurationTransport();
+        registerPlayTransport();
+        LOGGER.info("Cerberus Phase 0A initialized. CONFIGURATION presence + PLAY challenge/response fallback. "
+            + "Diagnostic switches: deny, protocol, suppressResponse, malformed.");
+    }
+
+    private static void registerPayloadTypes() {
+        // CONFIGURATION: presence is useful and proven to cross Fabric -> Paper.
         PayloadTypeRegistry.clientboundConfiguration().register(ChallengePayload.TYPE, ChallengePayload.CODEC);
         PayloadTypeRegistry.serverboundConfiguration().register(PresencePayload.TYPE, PresencePayload.CODEC);
         PayloadTypeRegistry.serverboundConfiguration().register(ResponsePayload.TYPE, ResponsePayload.CODEC);
 
+        // PLAY fallback: same protocol messages, phase-specific Fabric registries.
+        PayloadTypeRegistry.clientboundPlay().register(ChallengePayload.TYPE, ChallengePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(PresencePayload.TYPE, PresencePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ResponsePayload.TYPE, ResponsePayload.CODEC);
+    }
+
+    private static void registerConfigurationTransport() {
         ClientConfigurationNetworking.registerGlobalReceiver(ChallengePayload.TYPE, (payload, context) -> {
-            try {
-                Challenge challenge = ProtocolCodec.decodeChallenge(payload.bytes());
-
-                if (Boolean.getBoolean("cerberus.phase0a.suppressResponse")) {
-                    LOGGER.info("Received Guardian Phase 0A challenge; deliberately suppressing the response for timeout testing.");
-                    return;
-                }
-                if (!ClientConfigurationNetworking.canSend(ResponsePayload.TYPE)) {
-                    LOGGER.warn("Guardian response channel is not advertised by the server; not sending a Phase 0A response.");
-                    return;
-                }
-                if (Boolean.getBoolean("cerberus.phase0a.malformed")) {
-                    context.responseSender().sendPacket(new ResponsePayload(new byte[] {0x00}));
-                    LOGGER.info("Sent deliberately malformed Guardian Phase 0A response.");
-                    return;
-                }
-
-                int responseProtocol = Integer.getInteger("cerberus.phase0a.protocol", GuardianProtocol.VERSION);
-                List<ManifestEntry> manifest = buildTestManifest();
-                Response response = new Response(responseProtocol, challenge.nonce(), manifest);
-                context.responseSender().sendPacket(new ResponsePayload(ProtocolCodec.encodeResponse(response)));
-                LOGGER.info("Responded to Guardian Phase 0A challenge with protocol {} and {} test manifest entries.",
-                    responseProtocol, manifest.size());
-            } catch (ProtocolException | RuntimeException ex) {
-                LOGGER.warn("Ignoring invalid Guardian Phase 0A challenge", ex);
-            }
+            LOGGER.warn("Unexpected Guardian CONFIGURATION challenge received; responding for diagnostics.");
+            respondToChallenge(payload, context.responseSender(), "CONFIGURATION");
         });
 
         ClientConfigurationConnectionEvents.START.register((listener, client) -> {
             try {
                 boolean canSendPresence = ClientConfigurationNetworking.canSend(PresencePayload.TYPE);
                 boolean canSendResponse = ClientConfigurationNetworking.canSend(ResponsePayload.TYPE);
-                LOGGER.info("Guardian Phase 0A configuration START: presenceSendable={}, responseSendable={}, challengeReceivable={}",
+                LOGGER.info("Guardian Phase 0A CONFIGURATION START: presenceSendable={}, responseSendable={}, challengeReceivable={}",
                     canSendPresence,
                     canSendResponse,
                     ClientConfigurationNetworking.getReceived().contains(ChallengePayload.TYPE.id()));
 
                 if (!canSendPresence) {
-                    LOGGER.info("Connected server did not advertise the Guardian Phase 0A presence channel; no presence sent.");
-                    return;
+                    LOGGER.warn("Connected server did not advertise the Guardian CONFIGURATION presence channel; "
+                        + "attempting presence anyway (known Paper/Fabric interoperability behavior).");
                 }
 
-                int protocol = Integer.getInteger("cerberus.phase0a.protocol", GuardianProtocol.VERSION);
+                int protocol = selectedProtocol();
                 ClientConfigurationNetworking.send(
                     new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol)))
                 );
-                LOGGER.info("Sent Guardian Phase 0A presence with protocol {}.", protocol);
+                LOGGER.info("Attempted Guardian CONFIGURATION presence with protocol {} (serverAdvertised={}).",
+                    protocol, canSendPresence);
             } catch (RuntimeException ex) {
-                LOGGER.warn("Could not send Guardian Phase 0A presence", ex);
+                LOGGER.warn("Could not send Guardian CONFIGURATION presence", ex);
             }
         });
+    }
 
-        LOGGER.info("Cerberus Phase 0A initialized. Diagnostic switches: deny, protocol, suppressResponse, malformed.");
+    private static void registerPlayTransport() {
+        ClientPlayNetworking.registerGlobalReceiver(ChallengePayload.TYPE, (payload, context) ->
+            respondToChallenge(payload, context.responseSender(), "PLAY"));
+
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            try {
+                boolean canSendPresence = ClientPlayNetworking.canSend(PresencePayload.TYPE);
+                boolean canSendResponse = ClientPlayNetworking.canSend(ResponsePayload.TYPE);
+                LOGGER.info("Guardian Phase 0A PLAY JOIN: presenceSendable={}, responseSendable={}, challengeReceivable={}",
+                    canSendPresence,
+                    canSendResponse,
+                    ClientPlayNetworking.getReceived().contains(ChallengePayload.TYPE.id()));
+
+                if (!canSendPresence) {
+                    LOGGER.warn("Connected server did not advertise the Guardian PLAY presence channel; "
+                        + "attempting presence anyway for fallback interoperability testing.");
+                }
+
+                int protocol = selectedProtocol();
+                sender.sendPacket(new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol))));
+                LOGGER.info("Attempted Guardian PLAY presence with protocol {} (serverAdvertised={}).",
+                    protocol, canSendPresence);
+            } catch (RuntimeException ex) {
+                LOGGER.warn("Could not send Guardian PLAY presence", ex);
+            }
+        });
+    }
+
+    private static void respondToChallenge(ChallengePayload payload, PacketSender sender, String phase) {
+        try {
+            Challenge challenge = ProtocolCodec.decodeChallenge(payload.bytes());
+
+            if (Boolean.getBoolean("cerberus.phase0a.suppressResponse")) {
+                LOGGER.info("Received Guardian {} challenge; deliberately suppressing the response for timeout testing.", phase);
+                return;
+            }
+
+            if (Boolean.getBoolean("cerberus.phase0a.malformed")) {
+                sender.sendPacket(new ResponsePayload(new byte[] {0x00}));
+                LOGGER.info("Sent deliberately malformed Guardian {} response.", phase);
+                return;
+            }
+
+            int responseProtocol = selectedProtocol();
+            List<ManifestEntry> manifest = buildTestManifest();
+            Response response = new Response(responseProtocol, challenge.nonce(), manifest);
+            sender.sendPacket(new ResponsePayload(ProtocolCodec.encodeResponse(response)));
+            LOGGER.info("Responded to Guardian {} challenge with protocol {} and {} test manifest entries.",
+                phase, responseProtocol, manifest.size());
+        } catch (ProtocolException | RuntimeException ex) {
+            LOGGER.warn("Ignoring invalid Guardian {} challenge", phase, ex);
+        }
+    }
+
+    private static int selectedProtocol() {
+        return Integer.getInteger("cerberus.phase0a.protocol", GuardianProtocol.VERSION);
     }
 
     private static List<ManifestEntry> buildTestManifest() {

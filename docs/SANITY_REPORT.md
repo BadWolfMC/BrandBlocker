@@ -1,30 +1,18 @@
-# Phase 0A sanity report
+# Phase 0A Test Series 4 — sanity report
 
-Date: 2026-09-22
+## Source-level checks completed
 
-## Completed in this environment
+- `guardian-protocol` + `guardian-core` + `tools/Phase0SelfTest.java` compile under the available local JDK and the self-test reports `Phase0SelfTest: PASS`.
+- No Guardian server source imports NMS/CraftBukkit, reflection, Velocity, Geyser/Floodgate, LuckPerms, JDBC, or database APIs.
+- Cerberus contains no Fabric `impl` imports, Mixins, or direct use of Fabric's internal `RegistrationPayload`.
+- Paper PLAY disconnect uses the supported Adventure `Player#kick(Component)` API.
+- Fabric PLAY transport uses the public `PayloadTypeRegistry.clientboundPlay/serverboundPlay`, `ClientPlayConnectionEvents.JOIN`, and `ClientPlayNetworking` APIs.
+- CONFIGURATION presence remains on the public `ClientConfigurationNetworking` API proven by Test Series 3.
 
-- Reviewed the authoritative project contract and kept the implementation within Phase 0A scope.
-- Reviewed the legacy BrandBlocker source for behavior/reference only.
-- Re-checked the current Paper 26.2 connection/plugin-messaging APIs and current Fabric 26.2 networking/build APIs.
-- Compiled `guardian-protocol` + `guardian-core` + `tools/Phase0SelfTest.java` with the available JDK 21 as a source/logic sanity check.
-- Ran the self-test with assertions enabled: `Phase0SelfTest: PASS`.
-- Scanned project Java/build/resource files for server NMS, Java reflection, Velocity, Geyser/Floodgate, LuckPerms, and database dependencies; none were found.
-- Verified that the prototype keeps distinct decision reasons for Cerberus missing, timeout, incompatible protocol, denied manifest, and invalid protocol/manifest data.
+## Build limitation in this environment
 
-## Environment limitation
+A complete Gradle build was not possible here because the execution environment has JDK 21, the project targets Java 25, and the Gradle wrapper distribution/dependencies cannot be downloaded from this sandbox. The user's local Java 25/Gradle environment remains the authoritative compile check for the platform modules.
 
-The execution environment used for this review provides JDK 21, does not provide Gradle, has no cached Paper/Fabric dependencies, and cannot resolve Maven repositories from shell processes. Paper/Fabric 26.2 target Java 25. Therefore a full Gradle compile of `guardian-paper` and `cerberus-fabric`, and a live Minecraft interoperability test, were not executed here.
+## What this revision intentionally does not claim
 
-This is not considered evidence that the runtime handshake works. The live matrix in `PHASE_0A_TEST_PLAN.md` remains the required Phase 0A exit test.
-
-## 0.0.2 lifecycle-correction sanity pass
-
-- Added a bounded `Presence` message to the dependency-free protocol and covered it in both JUnit source and the standalone self-test.
-- Moved handshake initiation out of the late Paper async configuration event.
-- Added Fabric `ClientConfigurationConnectionEvents.START` presence transmission; Fabric documents `START` as send-capable.
-- Guardian now initiates the challenge only after receiving explicit Cerberus presence through Paper's configuration-aware plugin-message listener.
-- Removed `getListeningPluginChannels()` as an admission requirement; it remains diagnostic only.
-- Preserved distinct `CERBERUS_REQUIRED`, `CERBERUS_TIMEOUT`, `CERBERUS_PROTOCOL_UNSUPPORTED`, `MANIFEST_DENIED`, and `MANIFEST_INVALID` states.
-- Recompiled and ran the dependency-free protocol/core self-test with the available JDK 21: `Phase0SelfTest: PASS`.
-- Full Paper/Fabric Gradle compilation still cannot be executed in this environment because JDK 25 and dependency resolution are unavailable to shell processes.
+The PLAY fallback transport has not yet been live-tested in this revision. In particular, the next live test must confirm that Paper's PLAY `getListeningPluginChannels()` contains `guardian:challenge` after Cerberus enters PLAY and sends its presence. HandShaker and normal Fabric/Paper PLAY networking make this a reasonable experiment, but Guardian will not call it proven before the runtime test.

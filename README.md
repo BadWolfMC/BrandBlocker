@@ -1,68 +1,20 @@
-# Guardian / Cerberus — Phase 0A feasibility spike
+# Guardian / Cerberus — Phase 0A Test Series 4
 
-This is the intentionally minimal standalone Paper/Fabric proof-of-concept for BadWolfMC Guardian/Cerberus.
+This repository is the standalone Paper/Fabric feasibility spike for Guardian/Cerberus.
 
-It exists to answer one question: can Paper 26.2 and a Fabric 26.2 client exchange a bounded challenge/response during Minecraft CONFIGURATION and make a distinct allow/deny decision before world entry using supported public APIs only?
+## Current architectural finding
 
-## Modules
+Live Test Series 3 established that Fabric -> Paper custom payloads work during CONFIGURATION, but Paper -> Fabric does not complete through the supported plugin-messaging APIs because Paper never receives Fabric's configuration-stage client channel registration. Guardian deliberately does not use Fabric implementation internals, Mixins, NMS, reflection, or packet libraries to force that exchange.
 
-- `guardian-protocol` — dependency-free Phase 0A wire records, limits and codec.
-- `guardian-core` — dependency-free brand classification and deliberate Phase 0A manifest evaluation.
-- `guardian-paper` — standalone Paper 26.2 adapter and pre-world admission gate.
-- `cerberus-fabric` — Fabric 26.2 client responder and tiny Loader-derived test manifest.
+## Test Series 4 fallback
 
-Velocity, Geyser/Floodgate, LuckPerms, production policy files, full mod inventory policy, hashing, signatures, database/storage, GUI and admin commands are intentionally absent.
+This revision implements the project contract's supported fallback:
 
+- Vanilla: pre-world allow.
+- Fabric without Cerberus: pre-world `CERBERUS_REQUIRED` denial.
+- Fabric with compatible Cerberus: CONFIGURATION presence check, then immediate PLAY quarantine for the fresh nonce challenge/response.
+- Deliberate test manifest denial: `MANIFEST_DENIED` after a successful PLAY handshake.
 
-## Build tooling
+See `docs/PHASE_0A_TEST_PLAN.md` for the exact four-case run.
 
-The repository Gradle Wrapper is authoritative and is pinned to Gradle 9.7.1. Do not run the build with a separately installed `gradle` executable; use the wrapper so Loom and every developer/IDE use the same Gradle release.
-
-Windows PowerShell:
-
-```powershell
-.\gradlew.bat --version
-.\gradlew.bat clean test :guardian-paper:jar :cerberus-fabric:build
-```
-
-Linux/macOS:
-
-```bash
-./gradlew --version
-./gradlew clean test :guardian-paper:jar :cerberus-fabric:build
-```
-
-If an IDE was previously importing this checkout with Gradle 9.2.0, reload/reimport the Gradle project after updating the checkout so it forgets the stale Tooling API connection.
-
-## Paper lifecycle used
-
-1. `PlayerConnectionInitialConfigureEvent` creates the initial admission session. The client brand is logged here only as a diagnostic; the first live test showed that it can still be `null` at this point.
-2. Paper advertises `guardian:presence` and `guardian:response` as incoming plugin channels for the configuration connection.
-3. Cerberus sends a tiny presence payload during Fabric's configuration `START` event. Paper's configuration-aware `PluginMessageListener#onPluginMessageReceived(String, PlayerConnection, byte[])` receives that presence and immediately sends the nonce challenge on `guardian:challenge`.
-4. The same configuration-aware listener receives the Cerberus response asynchronously.
-5. `AsyncPlayerConnectionConfigureEvent` is used only as the bounded pre-world finalization barrier: it classifies the now-available brand and finalizes the already-started handshake. It no longer initiates the handshake or treats `getListeningPluginChannels()` as proof of Cerberus absence.
-6. `PlayerConnectionValidateLoginEvent` applies the already-computed decision using `kickMessage(...)`; no packets are sent from this validation event.
-7. `PlayerConnectionCloseEvent` removes abandoned/denied session state.
-
-The Paper configuration event package is public API but version-sensitive/experimental in the 26.2 line. This spike therefore targets 26.2 only and deliberately carries no 26.3 compatibility code.
-
-## Fabric lifecycle used
-
-Cerberus registers typed configuration payloads through `PayloadTypeRegistry.clientboundConfiguration()` / `serverboundConfiguration()` and receives the challenge with `ClientConfigurationNetworking.registerGlobalReceiver(...)`. It also registers `ClientConfigurationConnectionEvents.START`; at that documented send-capable point it checks whether Paper advertised `guardian:presence`, sends a tiny presence payload, and logs whether the presence/response channels are sendable and the challenge channel is receivable. The challenge response uses the receiver context's `responseSender()`.
-
-The test manifest intentionally contains only Loader-known versions for `cerberus`, `fabricloader`, and `minecraft`, plus an optional deliberate-deny marker. It is not the production manifest design.
-
-## Diagnostic switches
-
-- `-Dcerberus.phase0a.deny=true` adds the Phase 0A deny marker and should produce `MANIFEST_DENIED`.
-- `-Dcerberus.phase0a.protocol=99` sends a recognizable but unsupported protocol version and should produce `CERBERUS_PROTOCOL_UNSUPPORTED`.
-- `-Dcerberus.phase0a.suppressResponse=true` advertises Cerberus normally but deliberately does not answer the challenge, and should produce `CERBERUS_TIMEOUT`.
-- `-Dcerberus.phase0a.malformed=true` returns an intentionally invalid payload and should produce `MANIFEST_INVALID`.
-
-See `docs/PHASE_0A_TEST_PLAN.md` for the live matrix.
-
-## Legacy lineage
-
-Guardian is a substantial rewrite/hard-fork successor to BrandBlocker. BrandBlocker's useful product intent (brand-aware admission) informed this spike, but its delayed `PlayerJoinEvent` enforcement, substring-only matching, username-prefix Geyser bypass, and console-command kick architecture are not carried forward.
-
-The prototype source is intended to remain GPLv3-compatible with that lineage. A production repository should carry the complete attribution/license notices required by the authoritative project contract.
+This remains a feasibility spike, not production Guardian.

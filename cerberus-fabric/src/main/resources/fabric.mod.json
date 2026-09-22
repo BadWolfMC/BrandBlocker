@@ -3,7 +3,7 @@
   "id": "cerberus",
   "version": "${version}",
   "name": "Cerberus Phase 0A",
-  "description": "BadWolfMC Guardian/Cerberus standalone configuration-stage feasibility spike.",
+  "description": "BadWolfMC Guardian/Cerberus Phase 0A configuration-presence plus PLAY-quarantine fallback feasibility spike.",
   "authors": ["BadWolfMC"],
   "license": "GPL-3.0-only",
   "environment": "client",
