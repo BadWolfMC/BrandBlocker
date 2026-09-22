@@ -20,8 +20,8 @@ Linux/macOS:
 
 Expected artifacts:
 
-- `guardian-paper/build/libs/guardian-paper-0.0.1-phase0a.jar`
-- `cerberus-fabric/build/libs/cerberus-fabric-0.0.1-phase0a.jar`
+- `guardian-paper/build/libs/guardian-paper-0.0.2-phase0a.jar`
+- `cerberus-fabric/build/libs/cerberus-fabric-0.0.2-phase0a.jar`
 
 ## Test server/client
 
@@ -31,7 +31,7 @@ Expected artifacts:
 - Client C: Fabric 26.2 + Fabric API + Cerberus.
 - Client D: same as C, launched with JVM argument `-Dcerberus.phase0a.deny=true`.
 
-The prototype uses provisional channels `guardian:challenge` and `guardian:response`. They are Phase 0A choices only; the authoritative project contract intentionally defers final channel naming and wire format.
+The prototype uses provisional channels `guardian:presence`, `guardian:challenge`, and `guardian:response`. They are Phase 0A choices only; the authoritative project contract intentionally defers final channel naming and wire format.
 
 ## Required matrix
 
@@ -54,17 +54,19 @@ For each connection, save the Paper log lines showing:
 
 1. the brand visible during initial configuration;
 2. the Phase 0A classification;
-3. for Cerberus clients, the advertised `guardian:challenge` channel;
-4. the final structured `ALLOW`/`DENY` reason;
-5. whether `PlayerJoinEvent`/world entry occurs (server log is sufficient).
+3. for Cerberus clients, the client log line from configuration `START` showing `presenceSendable`, `responseSendable`, and `challengeReceivable`;
+4. the Paper log showing receipt of Cerberus presence and the challenge being sent;
+5. the final structured `ALLOW`/`DENY` reason;
+6. whether `PlayerJoinEvent`/world entry occurs (server log is sufficient).
 
 The critical runtime questions are:
 
 - Is Fabric's brand (`fabric`) visible by the Paper configuration events on a real 26.2 client?
-- Does Fabric receiver registration surface in `PlayerConfigurationConnection#getListeningPluginChannels()` before the async configuration barrier returns?
-- Does Paper `sendPluginMessage` -> Fabric `ClientConfigurationNetworking` work in CONFIGURATION?
+- Does Paper's incoming plugin-channel registration surface to Fabric so `ClientConfigurationNetworking.canSend(PresencePayload.TYPE)` is true at configuration `START`?
+- Does Cerberus `ClientConfigurationNetworking.send(...)` -> Paper's configuration-aware `PluginMessageListener` work in CONFIGURATION?
+- After presence arrives, does Paper `sendPluginMessage` -> Fabric `ClientConfigurationNetworking` work in CONFIGURATION?
 - Does Fabric `responseSender().sendPacket` -> Paper's `PluginMessageListener(PlayerConnection, ...)` work in CONFIGURATION?
-- Does waiting up to five seconds inside `AsyncPlayerConnectionConfigureEvent` allow the response to arrive without deadlock?
+- If a response is still pending, does waiting up to five seconds inside `AsyncPlayerConnectionConfigureEvent` allow the network callback to complete without deadlock?
 - Does `PlayerConnectionValidateLoginEvent#kickMessage` deny before world entry with the distinct expected message?
 - Does `PlayerConnectionCloseEvent` clean sessions for denied/aborted connections?
 

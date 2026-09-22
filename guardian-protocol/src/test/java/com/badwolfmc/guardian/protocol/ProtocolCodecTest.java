@@ -16,6 +16,14 @@ class ProtocolCodecTest {
     }
 
     @Test
+    void presenceRoundTrips() throws Exception {
+        Presence decoded = ProtocolCodec.decodePresence(
+            ProtocolCodec.encodePresence(new Presence(GuardianProtocol.VERSION))
+        );
+        assertEquals(GuardianProtocol.VERSION, decoded.protocolVersion());
+    }
+
+    @Test
     void challengeRoundTrips() throws Exception {
         Challenge decoded = ProtocolCodec.decodeChallenge(
             ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce()))

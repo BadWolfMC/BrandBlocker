@@ -8,6 +8,7 @@ import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.core.Phase0ResponseValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
+import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
 import com.badwolfmc.guardian.protocol.ProtocolException;
 import com.badwolfmc.guardian.protocol.Response;
@@ -28,7 +29,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -44,6 +44,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
     @Override
     public void onEnable() {
         getServer().getMessenger().registerOutgoingPluginChannel(this, GuardianProtocol.CHALLENGE_CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.PRESENCE_CHANNEL, this);
         getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.RESPONSE_CHANNEL, this);
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("Guardian Phase 0A enabled; CONFIGURATION-stage feasibility mode only.");
@@ -89,7 +90,13 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
         }
 
         ClientClassification classification = BrandClassifier.classify(connection.getClientBrandName());
-        getLogger().info(() -> "Phase 0A classified " + displayName(connection) + " as " + classification);
+        getLogger().info(() -> "Phase 0A finalization for " + displayName(connection)
+            + ": classification=" + classification
+            + ", cerberusPresent=" + session.cerberusPresent()
+            + ", cerberusProtocol=" + session.cerberusProtocol()
+            + ", challengeSent=" + session.challengeSent()
+            + ", responseDone=" + session.response().isDone()
+            + ", listeningChannels=" + connection.getListeningPluginChannels());
 
         if (classification == ClientClassification.JAVA_VANILLA) {
             session.decide(GuardianDecision.allow(DecisionReason.VANILLA_POLICY, "vanilla allowed by Phase 0A"));
@@ -101,28 +108,21 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             return;
         }
 
-        Set<String> channels = connection.getListeningPluginChannels();
-        if (!channels.contains(GuardianProtocol.CHALLENGE_CHANNEL)) {
-            session.decide(GuardianDecision.deny(DecisionReason.CERBERUS_REQUIRED,
-                "Fabric client did not advertise the Cerberus challenge channel"));
+        // A protocol/malformed-presence decision may already have been made by the configuration
+        // plugin-message callback. Preserve that structured reason rather than replacing it.
+        if (session.decision() != null) {
             return;
         }
 
-        byte[] nonce = new byte[GuardianProtocol.NONCE_BYTES];
-        random.nextBytes(nonce);
-        session.setNonce(nonce);
+        if (!session.cerberusPresent()) {
+            session.decide(GuardianDecision.deny(DecisionReason.CERBERUS_REQUIRED,
+                "Fabric client did not send the Cerberus configuration presence payload"));
+            return;
+        }
 
-        try {
-            // Mark first so an immediate Netty-thread response cannot race the local state update.
-            session.markChallengeSent();
-            connection.sendPluginMessage(
-                this,
-                GuardianProtocol.CHALLENGE_CHANNEL,
-                ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce))
-            );
-        } catch (RuntimeException ex) {
-            getLogger().warning("Could not send Phase 0A challenge to " + displayName(connection) + ": " + ex);
-            session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR, "challenge send failed"));
+        if (!session.challengeSent()) {
+            session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR,
+                "Cerberus presence was received but Guardian did not send a challenge"));
             return;
         }
 
@@ -132,7 +132,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             session.decide(decision);
         } catch (TimeoutException ex) {
             session.decide(GuardianDecision.deny(DecisionReason.CERBERUS_TIMEOUT,
-                "challenge channel was present but no response arrived in time"));
+                "Cerberus presence was received and a challenge was sent, but no response arrived in time"));
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR,
@@ -172,27 +172,24 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             event.kickMessage(Component.text(GuardianMessages.forReason(decision.reason())));
         }
 
-        // The final validation event now owns the immutable decision, so the per-connection
-        // handshake state is no longer needed. PlayerConnectionCloseEvent remains the abort/timeout
-        // cleanup path for connections that never reach this point.
         sessions.remove(playerId, session);
     }
 
     @EventHandler
     public void onConnectionClose(PlayerConnectionCloseEvent event) {
-        sessions.remove(event.getPlayerUniqueId());
+        AdmissionSession session = sessions.remove(event.getPlayerUniqueId());
+        if (session != null) {
+            session.response().completeExceptionally(new IllegalStateException("connection closed"));
+        }
     }
 
     @Override
     public void onPluginMessageReceived(@NotNull String channel, @NotNull Player player, byte @NotNull [] message) {
-        // Phase 0A only accepts Cerberus responses before world entry. PLAY-stage responses are ignored.
+        // Phase 0A only accepts Cerberus traffic before world entry. PLAY-stage messages are ignored.
     }
 
     @Override
     public void onPluginMessageReceived(@NotNull String channel, @NotNull PlayerConnection connection, byte @NotNull [] message) {
-        if (!GuardianProtocol.RESPONSE_CHANNEL.equals(channel)) {
-            return;
-        }
         if (!(connection instanceof PlayerConfigurationConnection configurationConnection)) {
             return;
         }
@@ -202,7 +199,80 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             return;
         }
         AdmissionSession session = sessions.get(playerId);
-        if (session == null || !session.challengeSent() || session.response().isDone()) {
+        if (session == null) {
+            return;
+        }
+
+        if (GuardianProtocol.PRESENCE_CHANNEL.equals(channel)) {
+            handlePresence(configurationConnection, session, message);
+            return;
+        }
+        if (GuardianProtocol.RESPONSE_CHANNEL.equals(channel)) {
+            handleResponse(session, message);
+        }
+    }
+
+    private void handlePresence(PlayerConfigurationConnection connection, AdmissionSession session, byte[] message) {
+        if (message.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {
+            session.decide(GuardianDecision.deny(DecisionReason.MANIFEST_INVALID,
+                "presence exceeds Phase 0A limit"));
+            return;
+        }
+
+        final Presence presence;
+        try {
+            presence = ProtocolCodec.decodePresence(message);
+        } catch (ProtocolException ex) {
+            session.decide(GuardianDecision.deny(DecisionReason.MANIFEST_INVALID,
+                "invalid Cerberus presence: " + ex.getMessage()));
+            return;
+        }
+
+        if (!session.recordPresence(presence.protocolVersion())) {
+            session.decide(GuardianDecision.deny(DecisionReason.MANIFEST_INVALID,
+                "conflicting duplicate Cerberus presence"));
+            return;
+        }
+
+        getLogger().info(() -> "Phase 0A Cerberus presence from " + displayName(connection)
+            + ": protocol=" + presence.protocolVersion()
+            + ", brand=" + String.valueOf(connection.getClientBrandName())
+            + ", listeningChannels=" + connection.getListeningPluginChannels());
+
+        if (presence.protocolVersion() != GuardianProtocol.VERSION) {
+            session.decide(GuardianDecision.deny(DecisionReason.CERBERUS_PROTOCOL_UNSUPPORTED,
+                "Cerberus announced protocol " + presence.protocolVersion()
+                    + ", Guardian supports " + GuardianProtocol.VERSION));
+            return;
+        }
+
+        sendChallenge(connection, session);
+    }
+
+    private void sendChallenge(PlayerConfigurationConnection connection, AdmissionSession session) {
+        if (!session.tryMarkChallengeSent()) {
+            return;
+        }
+
+        byte[] nonce = new byte[GuardianProtocol.NONCE_BYTES];
+        random.nextBytes(nonce);
+        session.setNonce(nonce);
+
+        try {
+            connection.sendPluginMessage(
+                this,
+                GuardianProtocol.CHALLENGE_CHANNEL,
+                ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce))
+            );
+            getLogger().info(() -> "Phase 0A challenge sent to " + displayName(connection));
+        } catch (RuntimeException ex) {
+            getLogger().warning("Could not send Phase 0A challenge to " + displayName(connection) + ": " + ex);
+            session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR, "challenge send failed"));
+        }
+    }
+
+    private void handleResponse(AdmissionSession session, byte[] message) {
+        if (!session.challengeSent() || session.response().isDone()) {
             return;
         }
         if (message.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {

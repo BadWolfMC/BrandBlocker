@@ -6,6 +6,7 @@ import com.badwolfmc.guardian.core.Phase0ResponseValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.ManifestEntry;
+import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
 import com.badwolfmc.guardian.protocol.Response;
 
@@ -15,6 +16,10 @@ public final class Phase0SelfTest {
     public static void main(String[] args) throws Exception {
         byte[] nonce = new byte[GuardianProtocol.NONCE_BYTES];
         for (int i = 0; i < nonce.length; i++) nonce[i] = (byte) (i * 7);
+
+        Presence decodedPresence = ProtocolCodec.decodePresence(
+            ProtocolCodec.encodePresence(new Presence(GuardianProtocol.VERSION)));
+        require(decodedPresence.protocolVersion() == GuardianProtocol.VERSION, "presence protocol round-trip");
 
         Challenge decodedChallenge = ProtocolCodec.decodeChallenge(
             ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce)));

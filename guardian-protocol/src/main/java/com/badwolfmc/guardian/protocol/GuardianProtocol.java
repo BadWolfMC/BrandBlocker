@@ -8,6 +8,7 @@ public final class GuardianProtocol {
     public static final int MAX_MOD_ID_BYTES = 64;
     public static final int MAX_VERSION_BYTES = 64;
 
+    public static final String PRESENCE_CHANNEL = "guardian:presence";
     public static final String CHALLENGE_CHANNEL = "guardian:challenge";
     public static final String RESPONSE_CHANNEL = "guardian:response";
 
@@ -16,6 +17,7 @@ public final class GuardianProtocol {
     static final int MAGIC = 0x47554130; // GUA0
     static final int TYPE_CHALLENGE = 1;
     static final int TYPE_RESPONSE = 2;
+    static final int TYPE_PRESENCE = 3;
 
     private GuardianProtocol() {
     }

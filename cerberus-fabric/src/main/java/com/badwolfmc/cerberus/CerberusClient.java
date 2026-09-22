@@ -1,14 +1,17 @@
 package com.badwolfmc.cerberus;
 
 import com.badwolfmc.cerberus.network.ChallengePayload;
+import com.badwolfmc.cerberus.network.PresencePayload;
 import com.badwolfmc.cerberus.network.ResponsePayload;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.ManifestEntry;
+import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
 import com.badwolfmc.guardian.protocol.ProtocolException;
 import com.badwolfmc.guardian.protocol.Response;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.loader.api.FabricLoader;
@@ -25,6 +28,7 @@ public final class CerberusClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         PayloadTypeRegistry.clientboundConfiguration().register(ChallengePayload.TYPE, ChallengePayload.CODEC);
+        PayloadTypeRegistry.serverboundConfiguration().register(PresencePayload.TYPE, PresencePayload.CODEC);
         PayloadTypeRegistry.serverboundConfiguration().register(ResponsePayload.TYPE, ResponsePayload.CODEC);
 
         ClientConfigurationNetworking.registerGlobalReceiver(ChallengePayload.TYPE, (payload, context) -> {
@@ -53,6 +57,30 @@ public final class CerberusClient implements ClientModInitializer {
                     responseProtocol, manifest.size());
             } catch (ProtocolException | RuntimeException ex) {
                 LOGGER.warn("Ignoring invalid Guardian Phase 0A challenge", ex);
+            }
+        });
+
+        ClientConfigurationConnectionEvents.START.register((listener, client) -> {
+            try {
+                boolean canSendPresence = ClientConfigurationNetworking.canSend(PresencePayload.TYPE);
+                boolean canSendResponse = ClientConfigurationNetworking.canSend(ResponsePayload.TYPE);
+                LOGGER.info("Guardian Phase 0A configuration START: presenceSendable={}, responseSendable={}, challengeReceivable={}",
+                    canSendPresence,
+                    canSendResponse,
+                    ClientConfigurationNetworking.getReceived().contains(ChallengePayload.TYPE.id()));
+
+                if (!canSendPresence) {
+                    LOGGER.info("Connected server did not advertise the Guardian Phase 0A presence channel; no presence sent.");
+                    return;
+                }
+
+                int protocol = Integer.getInteger("cerberus.phase0a.protocol", GuardianProtocol.VERSION);
+                ClientConfigurationNetworking.send(
+                    new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol)))
+                );
+                LOGGER.info("Sent Guardian Phase 0A presence with protocol {}.", protocol);
+            } catch (RuntimeException ex) {
+                LOGGER.warn("Could not send Guardian Phase 0A presence", ex);
             }
         });
 

@@ -36,17 +36,19 @@ If an IDE was previously importing this checkout with Gradle 9.2.0, reload/reimp
 
 ## Paper lifecycle used
 
-1. `PlayerConnectionInitialConfigureEvent` creates the initial admission session and records the configuration-stage brand for diagnostics.
-2. `AsyncPlayerConnectionConfigureEvent` is the bounded pre-world barrier. Vanilla is allowed immediately. Fabric must advertise the Cerberus challenge channel; Guardian sends a challenge and waits up to five seconds for a response.
-3. Paper's configuration-aware `PluginMessageListener#onPluginMessageReceived(String, PlayerConnection, byte[])` receives the Cerberus response.
-4. `PlayerConnectionValidateLoginEvent` applies the already-computed decision using `kickMessage(...)`; no packets are sent from this validation event.
-5. `PlayerConnectionCloseEvent` removes abandoned/denied session state.
+1. `PlayerConnectionInitialConfigureEvent` creates the initial admission session. The client brand is logged here only as a diagnostic; the first live test showed that it can still be `null` at this point.
+2. Paper advertises `guardian:presence` and `guardian:response` as incoming plugin channels for the configuration connection.
+3. Cerberus sends a tiny presence payload during Fabric's configuration `START` event. Paper's configuration-aware `PluginMessageListener#onPluginMessageReceived(String, PlayerConnection, byte[])` receives that presence and immediately sends the nonce challenge on `guardian:challenge`.
+4. The same configuration-aware listener receives the Cerberus response asynchronously.
+5. `AsyncPlayerConnectionConfigureEvent` is used only as the bounded pre-world finalization barrier: it classifies the now-available brand and finalizes the already-started handshake. It no longer initiates the handshake or treats `getListeningPluginChannels()` as proof of Cerberus absence.
+6. `PlayerConnectionValidateLoginEvent` applies the already-computed decision using `kickMessage(...)`; no packets are sent from this validation event.
+7. `PlayerConnectionCloseEvent` removes abandoned/denied session state.
 
 The Paper configuration event package is public API but version-sensitive/experimental in the 26.2 line. This spike therefore targets 26.2 only and deliberately carries no 26.3 compatibility code.
 
 ## Fabric lifecycle used
 
-Cerberus registers typed configuration payloads through `PayloadTypeRegistry.clientboundConfiguration()` / `serverboundConfiguration()` and receives the challenge with `ClientConfigurationNetworking.registerGlobalReceiver(...)`. The response uses the receiver context's `responseSender()`.
+Cerberus registers typed configuration payloads through `PayloadTypeRegistry.clientboundConfiguration()` / `serverboundConfiguration()` and receives the challenge with `ClientConfigurationNetworking.registerGlobalReceiver(...)`. It also registers `ClientConfigurationConnectionEvents.START`; at that documented send-capable point it checks whether Paper advertised `guardian:presence`, sends a tiny presence payload, and logs whether the presence/response channels are sendable and the challenge channel is receivable. The challenge response uses the receiver context's `responseSender()`.
 
 The test manifest intentionally contains only Loader-known versions for `cerberus`, `fabricloader`, and `minecraft`, plus an optional deliberate-deny marker. It is not the production manifest design.
 

@@ -5,14 +5,17 @@ import com.badwolfmc.guardian.protocol.Response;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 final class AdmissionSession {
     private final UUID playerId;
     private final CompletableFuture<Response> response = new CompletableFuture<>();
     private final AtomicReference<GuardianDecision> decision = new AtomicReference<>();
+    private final AtomicBoolean challengeSent = new AtomicBoolean();
     private volatile byte[] nonce;
-    private volatile boolean challengeSent;
+    private volatile boolean cerberusPresent;
+    private volatile Integer cerberusProtocol;
 
     AdmissionSession(UUID playerId) {
         this.playerId = playerId;
@@ -42,11 +45,28 @@ final class AdmissionSession {
         this.nonce = nonce.clone();
     }
 
-    boolean challengeSent() {
-        return challengeSent;
+    boolean cerberusPresent() {
+        return cerberusPresent;
     }
 
-    void markChallengeSent() {
-        this.challengeSent = true;
+    Integer cerberusProtocol() {
+        return cerberusProtocol;
+    }
+
+    synchronized boolean recordPresence(int protocolVersion) {
+        if (!cerberusPresent) {
+            cerberusProtocol = protocolVersion;
+            cerberusPresent = true;
+            return true;
+        }
+        return cerberusProtocol != null && cerberusProtocol == protocolVersion;
+    }
+
+    boolean challengeSent() {
+        return challengeSent.get();
+    }
+
+    boolean tryMarkChallengeSent() {
+        return challengeSent.compareAndSet(false, true);
     }
 }

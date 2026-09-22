@@ -14,6 +14,22 @@ public final class ProtocolCodec {
     private ProtocolCodec() {
     }
 
+    public static byte[] encodePresence(Presence presence) {
+        return write(out -> {
+            out.writeInt(GuardianProtocol.MAGIC);
+            out.writeByte(GuardianProtocol.TYPE_PRESENCE);
+            out.writeShort(presence.protocolVersion());
+        });
+    }
+
+    public static Presence decodePresence(byte[] payload) throws ProtocolException {
+        return read(payload, GuardianProtocol.TYPE_PRESENCE, in -> {
+            int protocolVersion = Short.toUnsignedInt(in.readShort());
+            ensureFullyConsumed(in);
+            return new Presence(protocolVersion);
+        });
+    }
+
     public static byte[] encodeChallenge(Challenge challenge) {
         return write(out -> {
             out.writeInt(GuardianProtocol.MAGIC);
