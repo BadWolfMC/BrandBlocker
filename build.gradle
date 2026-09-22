@@ -1,0 +1,33 @@
+allprojects {
+    group = 'com.badwolfmc.guardian'
+    version = '0.0.1-phase0a'
+
+    repositories {
+        mavenCentral()
+        maven { url = 'https://repo.papermc.io/repository/maven-public/' }
+        maven { url = 'https://maven.fabricmc.net/' }
+    }
+}
+
+subprojects {
+    plugins.withType(JavaPlugin).configureEach {
+        java {
+            toolchain.languageVersion = JavaLanguageVersion.of(25)
+        }
+        tasks.withType(JavaCompile).configureEach {
+            options.release = 25
+            options.encoding = 'UTF-8'
+        }
+        tasks.withType(Test).configureEach {
+            useJUnitPlatform()
+        }
+    }
+}
+
+// Keep the repository wrapper authoritative. Build this project with ./gradlew
+// (or gradlew.bat on Windows), not an arbitrary system Gradle installation.
+tasks.named('wrapper') {
+    gradleVersion = '9.7.1'
+    distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum = 'acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a'
+}

@@ -1,0 +1,6 @@
+name: GuardianPhase0A
+version: '${version}'
+main: com.badwolfmc.guardian.paper.GuardianPaperPlugin
+api-version: '26.2'
+authors: [BadWolfMC]
+description: Guardian/Cerberus Phase 0A standalone Paper feasibility spike.

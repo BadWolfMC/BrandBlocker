@@ -1,0 +1,13 @@
+package com.badwolfmc.guardian.core;
+
+public enum DecisionReason {
+    VANILLA_POLICY,
+    CERBERUS_VERIFIED,
+    CERBERUS_REQUIRED,
+    CERBERUS_TIMEOUT,
+    CERBERUS_PROTOCOL_UNSUPPORTED,
+    MANIFEST_DENIED,
+    MANIFEST_INVALID,
+    CLIENT_DENIED,
+    CONFIGURATION_ERROR
+}

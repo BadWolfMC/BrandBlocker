@@ -1,0 +1,27 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    implementation project(':guardian-core')
+    implementation project(':guardian-protocol')
+    compileOnly "io.papermc.paper:paper-api:${paper_api_version}"
+}
+
+base {
+    archivesName = 'guardian-paper'
+}
+
+tasks.named('jar') {
+    dependsOn project(':guardian-core').tasks.named('classes')
+    dependsOn project(':guardian-protocol').tasks.named('classes')
+    from(project(':guardian-core').sourceSets.main.output)
+    from(project(':guardian-protocol').sourceSets.main.output)
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('plugin.yml') {
+        expand version: project.version
+    }
+}

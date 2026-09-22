@@ -1,0 +1,10 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+        maven { url = 'https://repo.papermc.io/repository/maven-public/' }
+    }
+}
+
+rootProject.name = 'guardian-cerberus-phase0a'
+include 'guardian-protocol', 'guardian-core', 'guardian-paper', 'cerberus-fabric'

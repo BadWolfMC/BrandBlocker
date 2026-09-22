@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "cerberus",
+  "version": "${version}",
+  "name": "Cerberus Phase 0A",
+  "description": "BadWolfMC Guardian/Cerberus standalone configuration-stage feasibility spike.",
+  "authors": ["BadWolfMC"],
+  "license": "GPL-3.0-only",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.badwolfmc.cerberus.CerberusClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
