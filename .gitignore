@@ -9,8 +9,13 @@
 .project
 .settings/
 
+# Share only the minimal VS Code project-model settings; keep personal/editor
+# workspace state out of Git.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
 # Project ephemera
-.vscode/
 *.patch
 *.zip
 

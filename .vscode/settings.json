@@ -1,0 +1,13 @@
+{
+    "java.server.launchMode": "Standard",
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.project.importOnFirstTimeStartup": "automatic",
+    "java.import.gradle.enabled": true,
+    "java.import.gradle.wrapper.enabled": true,
+    "java.project.resourceFilters": [
+        "node_modules",
+        ".git",
+        ".gradle",
+        "build"
+    ]
+}

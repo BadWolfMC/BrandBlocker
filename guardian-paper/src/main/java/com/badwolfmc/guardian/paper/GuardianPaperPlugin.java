@@ -41,7 +41,6 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.jetbrains.annotations.NotNull;
 
 import java.security.SecureRandom;
-import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,19 +55,27 @@ import java.util.concurrent.ConcurrentHashMap;
  * nonce challenge/response there, and are released or disconnected.</p>
  */
 public final class GuardianPaperPlugin extends JavaPlugin implements Listener, PluginMessageListener {
-    private static final Duration HANDSHAKE_TIMEOUT = Duration.ofSeconds(5);
-    private static final long HANDSHAKE_TIMEOUT_TICKS = HANDSHAKE_TIMEOUT.toSeconds() * 20L;
+    private static final int DEFAULT_HANDSHAKE_TIMEOUT_SECONDS = 10;
+    private static final int MAX_HANDSHAKE_TIMEOUT_SECONDS = 60;
+    private static final int DEFAULT_CHALLENGE_CHANNEL_WAIT_TICKS = 40;
 
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentHashMap<UUID, AdmissionSession> sessions = new ConcurrentHashMap<>();
+    private long handshakeTimeoutTicks;
+    private int challengeChannelWaitTicks;
 
     @Override
     public void onEnable() {
+        saveDefaultConfig();
+        loadPhase0Timing();
+
         getServer().getMessenger().registerOutgoingPluginChannel(this, GuardianProtocol.CHALLENGE_CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.PRESENCE_CHANNEL, this);
         getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.RESPONSE_CHANNEL, this);
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Guardian Phase 0A enabled; CONFIGURATION presence + PLAY quarantine fallback feasibility mode.");
+        getLogger().info("Guardian Phase 0A enabled; CONFIGURATION presence + PLAY quarantine fallback feasibility mode. "
+            + "handshakeTimeout=" + (handshakeTimeoutTicks / 20.0) + "s, challengeChannelWait="
+            + challengeChannelWaitTicks + " ticks.");
     }
 
     @Override
@@ -194,7 +201,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
 
         getServer().getScheduler().runTaskLater(this,
             () -> handleHandshakeTimeout(player.getUniqueId()),
-            HANDSHAKE_TIMEOUT_TICKS);
+            handshakeTimeoutTicks);
     }
 
     @EventHandler
@@ -357,7 +364,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             return;
         }
 
-        sendPlayChallenge(player, session, false);
+        sendPlayChallenge(player, session, 0);
     }
 
     private Presence decodePresence(AdmissionSession session, byte[] message, String phase) {
@@ -384,23 +391,36 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
         return presence;
     }
 
-    private void sendPlayChallenge(Player player, AdmissionSession session, boolean retry) {
+    private void sendPlayChallenge(Player player, AdmissionSession session, int waitedTicks) {
         if (session.challengeSent() || session.decision() != null || !player.isOnline()) {
             return;
         }
 
         Set<String> listeningChannels = player.getListeningPluginChannels();
         if (!listeningChannels.contains(GuardianProtocol.CHALLENGE_CHANNEL)) {
-            if (!retry) {
-                getLogger().warning("Cerberus PLAY presence arrived before Paper saw the challenge channel for "
-                    + player.getName() + "; retrying once next tick. listeningChannels=" + listeningChannels);
-                getServer().getScheduler().runTask(this, () -> sendPlayChallenge(player, session, true));
+            if (waitedTicks < challengeChannelWaitTicks) {
+                if (waitedTicks == 0) {
+                    getLogger().info("Cerberus PLAY presence arrived before Paper saw the challenge channel for "
+                        + player.getName() + "; waiting up to " + challengeChannelWaitTicks
+                        + " ticks for registration. listeningChannels=" + listeningChannels);
+                }
+                getServer().getScheduler().runTaskLater(
+                    this,
+                    () -> sendPlayChallenge(player, session, waitedTicks + 1),
+                    1L
+                );
             } else {
                 finishPlayDecision(player, session, GuardianDecision.deny(
-                    DecisionReason.CONFIGURATION_ERROR,
-                    "PLAY challenge channel was not registered by the Cerberus client"));
+                    DecisionReason.CERBERUS_TIMEOUT,
+                    "Cerberus PLAY challenge channel was not registered within "
+                        + challengeChannelWaitTicks + " ticks"));
             }
             return;
+        }
+
+        if (waitedTicks > 0) {
+            getLogger().info("Guardian challenge channel became available for " + player.getName()
+                + " after " + waitedTicks + " tick(s).");
         }
 
         if (!session.tryMarkChallengeSent()) {
@@ -488,6 +508,34 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             player.kick(Component.text(GuardianMessages.forReason(finalDecision.reason())));
             sessions.remove(player.getUniqueId(), session);
         }
+    }
+
+
+    private void loadPhase0Timing() {
+        int timeoutSeconds = getConfig().getInt(
+            "phase0.handshake-timeout-seconds",
+            DEFAULT_HANDSHAKE_TIMEOUT_SECONDS
+        );
+        if (timeoutSeconds < 1 || timeoutSeconds > MAX_HANDSHAKE_TIMEOUT_SECONDS) {
+            getLogger().warning("phase0.handshake-timeout-seconds must be between 1 and "
+                + MAX_HANDSHAKE_TIMEOUT_SECONDS + "; using default "
+                + DEFAULT_HANDSHAKE_TIMEOUT_SECONDS + ".");
+            timeoutSeconds = DEFAULT_HANDSHAKE_TIMEOUT_SECONDS;
+        }
+        handshakeTimeoutTicks = timeoutSeconds * 20L;
+
+        int configuredChannelWait = getConfig().getInt(
+            "phase0.challenge-channel-wait-ticks",
+            DEFAULT_CHALLENGE_CHANNEL_WAIT_TICKS
+        );
+        int maxChannelWait = (int) Math.min(Integer.MAX_VALUE, handshakeTimeoutTicks);
+        if (configuredChannelWait < 1 || configuredChannelWait > maxChannelWait) {
+            int fallback = Math.min(DEFAULT_CHALLENGE_CHANNEL_WAIT_TICKS, maxChannelWait);
+            getLogger().warning("phase0.challenge-channel-wait-ticks must be between 1 and "
+                + maxChannelWait + " for the configured handshake timeout; using " + fallback + ".");
+            configuredChannelWait = fallback;
+        }
+        challengeChannelWaitTicks = configuredChannelWait;
     }
 
     private boolean isQuarantined(Player player) {

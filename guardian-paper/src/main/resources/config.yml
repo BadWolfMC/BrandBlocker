@@ -1,0 +1,11 @@
+# Phase 0A feasibility-spike timing only.
+# Production configuration will be designed in a later phase.
+phase0:
+  # Maximum time a compatible Cerberus client may remain in the PLAY quarantine
+  # while the nonce challenge/response is completed.
+  handshake-timeout-seconds: 10
+
+  # Maximum number of ticks Guardian waits for Paper to observe Cerberus's
+  # guardian:challenge PLAY channel before treating the handshake as timed out.
+  # This value may not exceed the total handshake timeout in ticks.
+  challenge-channel-wait-ticks: 40

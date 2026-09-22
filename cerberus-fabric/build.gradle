@@ -13,10 +13,12 @@ base {
     archivesName = 'cerberus-fabric'
 }
 
+def cerberusVersion = version.toString()
+
 processResources {
-    inputs.property 'version', project.version
+    inputs.property 'version', cerberusVersion
     filesMatching('fabric.mod.json') {
-        expand version: project.version
+        expand version: cerberusVersion
     }
 }
 
