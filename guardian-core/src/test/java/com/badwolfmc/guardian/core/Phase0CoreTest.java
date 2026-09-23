@@ -3,6 +3,7 @@ package com.badwolfmc.guardian.core;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.ManifestEntry;
 import com.badwolfmc.guardian.protocol.Response;
+import com.badwolfmc.guardian.protocol.ProxyAdmissionAssertion;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -70,5 +71,36 @@ class Phase0CoreTest {
             nonce[i] = (byte) i;
         }
         return nonce;
+    }
+
+    @Test
+    void proxyAdmissionBindsUuidAndFreshness() {
+        java.util.UUID playerId = java.util.UUID.randomUUID();
+        long now = 50_000L;
+        byte[] sessionId = new byte[GuardianProtocol.PROXY_SESSION_ID_BYTES];
+        ProxyAdmissionAssertion valid =
+            new ProxyAdmissionAssertion(
+                GuardianProtocol.PROXY_ASSERTION_VERSION,
+                playerId,
+                sessionId,
+                now - 1_000L,
+                now + 5_000L
+            );
+
+        assertEquals(DecisionReason.PROXY_ADMISSION_VERIFIED,
+            ProxyAdmissionValidator.validate(valid, playerId, now).reason());
+        assertEquals(DecisionReason.PROXY_ASSERTION_INVALID,
+            ProxyAdmissionValidator.validate(valid, java.util.UUID.randomUUID(), now).reason());
+
+        ProxyAdmissionAssertion expired =
+            new ProxyAdmissionAssertion(
+                GuardianProtocol.PROXY_ASSERTION_VERSION,
+                playerId,
+                sessionId,
+                now - 10_000L,
+                now - 1L
+            );
+        assertEquals(DecisionReason.PROXY_ASSERTION_INVALID,
+            ProxyAdmissionValidator.validate(expired, playerId, now).reason());
     }
 }

@@ -6,11 +6,14 @@ import com.badwolfmc.guardian.core.DecisionOutcome;
 import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.core.Phase0ResponseValidator;
+import com.badwolfmc.guardian.core.ProxyAdmissionValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
 import com.badwolfmc.guardian.protocol.ProtocolException;
+import com.badwolfmc.guardian.protocol.ProxyAdmissionAssertion;
+import com.badwolfmc.guardian.protocol.ProxyAdmissionCodec;
 import com.badwolfmc.guardian.protocol.Response;
 import com.destroystokyo.paper.event.player.PlayerConnectionCloseEvent;
 import io.papermc.paper.connection.PlayerConfigurationConnection;
@@ -41,18 +44,19 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.jetbrains.annotations.NotNull;
 
 import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Phase 0A fallback feasibility spike.
+ * Guardian-Paper Phase 0 feasibility adapter.
  *
- * <p>CONFIGURATION is retained for brand classification and Cerberus presence/protocol detection.
- * Paper 26.2 cannot send Guardian's CONFIGURATION challenge to a stock Fabric client through the
- * supported plugin-messaging API because the client channel registration never reaches Paper.
- * Compatible Cerberus clients therefore cross into PLAY in an immediate quarantine, complete the
- * nonce challenge/response there, and are released or disconnected.</p>
+ * <p>In standalone authority mode it preserves the Phase 0A hybrid: CONFIGURATION handles brand
+ * and Cerberus presence/protocol, while compatible Fabric clients complete the nonce exchange in
+ * immediate quarantined PLAY. In Velocity authority mode Paper does not re-attest the client; it
+ * accepts only a short-lived infrastructure-authenticated admission assertion from
+ * Guardian-Velocity.</p>
  */
 public final class GuardianPaperPlugin extends JavaPlugin implements Listener, PluginMessageListener {
     private static final int DEFAULT_HANDSHAKE_TIMEOUT_SECONDS = 10;
@@ -63,19 +67,27 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
     private final ConcurrentHashMap<UUID, AdmissionSession> sessions = new ConcurrentHashMap<>();
     private long handshakeTimeoutTicks;
     private int challengeChannelWaitTicks;
+    private PaperAuthorityMode authorityMode = PaperAuthorityMode.STANDALONE;
+    private byte[] proxySecret;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        loadPhase0Timing();
+        loadPhase0Settings();
 
         getServer().getMessenger().registerOutgoingPluginChannel(this, GuardianProtocol.CHALLENGE_CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.PRESENCE_CHANNEL, this);
         getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.RESPONSE_CHANNEL, this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.PROXY_ADMISSION_CHANNEL, this);
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Guardian Phase 0A enabled; CONFIGURATION presence + PLAY quarantine fallback feasibility mode. "
-            + "handshakeTimeout=" + (handshakeTimeoutTicks / 20.0) + "s, challengeChannelWait="
-            + challengeChannelWaitTicks + " ticks.");
+        if (authorityMode == PaperAuthorityMode.VELOCITY) {
+            getLogger().info("Guardian Phase 0B.2 Paper backend enabled in VELOCITY authority mode; "
+                + "local Cerberus policy evaluation is disabled and a trusted proxy assertion is required.");
+        } else {
+            getLogger().info("Guardian standalone Paper authority enabled; CONFIGURATION presence + PLAY quarantine "
+                + "fallback mode. handshakeTimeout=" + (handshakeTimeoutTicks / 20.0)
+                + "s, challengeChannelWait=" + challengeChannelWaitTicks + " ticks.");
+        }
     }
 
     @Override
@@ -112,41 +124,20 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
 
         AdmissionSession session = sessions.get(playerId);
         if (session == null) {
-            return; // Reconfiguration is outside the Phase 0A spike.
+            return; // Reconfiguration is outside the current feasibility spike.
         }
 
-        ClientClassification classification = BrandClassifier.classify(connection.getClientBrandName());
-        getLogger().info(() -> "Phase 0A configuration finalization for " + displayName(connection)
-            + ": classification=" + classification
-            + ", cerberusPresent=" + session.cerberusPresent()
-            + ", cerberusProtocol=" + session.cerberusProtocol()
-            + ", listeningChannels=" + connection.getListeningPluginChannels());
-
-        if (classification == ClientClassification.JAVA_VANILLA) {
-            session.decide(GuardianDecision.allow(DecisionReason.VANILLA_POLICY, "vanilla allowed by Phase 0A"));
-            return;
-        }
-        if (classification != ClientClassification.JAVA_FABRIC) {
-            session.decide(GuardianDecision.deny(DecisionReason.CLIENT_DENIED,
-                "unsupported/unknown Phase 0A brand: " + String.valueOf(connection.getClientBrandName())));
+        if (authorityMode == PaperAuthorityMode.VELOCITY) {
+            getLogger().info(() -> "Phase 0B.2 backend configuration for " + displayName(connection)
+                + ": authority=VELOCITY, brand=" + String.valueOf(connection.getClientBrandName())
+                + ", proxyAssertion=" + (session.proxyAdmission() != null ? "present" : "pending"));
+            // Do not wait here. Velocity's PlayerConfigurationEvent is fired after the backend has
+            // finished its configuration work; blocking this async Paper event would risk a
+            // circular wait. The final PlayerConnectionValidateLoginEvent is the admission gate.
             return;
         }
 
-        // Malformed presence or incompatible protocol may already have produced a structured denial.
-        if (session.decision() != null) {
-            return;
-        }
-
-        if (!session.cerberusPresent()) {
-            session.decide(GuardianDecision.deny(DecisionReason.CERBERUS_REQUIRED,
-                "Fabric client did not send the Cerberus CONFIGURATION presence payload"));
-            return;
-        }
-
-        // Bidirectional CONFIGURATION plugin messaging is blocked by channel-registration
-        // interoperability on Paper 26.2/Fabric 26.2. Preserve the useful pre-world Cerberus
-        // presence check, then defer only the nonce challenge/response to quarantined PLAY.
-        session.requirePlayHandshake();
+        evaluateStandaloneConfiguration(connection, session, false);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -165,26 +156,108 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             return;
         }
 
+        if (authorityMode == PaperAuthorityMode.VELOCITY) {
+            GuardianDecision decision = session.decision();
+            if (decision == null) {
+                decision = GuardianDecision.deny(
+                    proxySecret == null ? DecisionReason.CONFIGURATION_ERROR : DecisionReason.PROXY_ASSERTION_REQUIRED,
+                    proxySecret == null
+                        ? "Velocity authority configured but GUARDIAN_PHASE0B_PROXY_SECRET is unavailable"
+                        : "no valid Guardian-Velocity admission assertion arrived before final validation"
+                );
+                session.decide(decision);
+            }
+
+            GuardianDecision finalDecision = session.decision();
+            getLogger().info(() -> "Phase 0B.2 backend pre-world decision for " + displayName(connection) + ": "
+                + finalDecision.outcome() + " / " + finalDecision.reason() + " ("
+                + finalDecision.detail() + ")");
+            if (finalDecision.outcome() == DecisionOutcome.DENY) {
+                event.kickMessage(Component.text(GuardianMessages.forReason(finalDecision.reason())));
+            }
+            sessions.remove(playerId, session);
+            return;
+        }
+
+        // Velocity currently mirrors the client brand to a backend late in CONFIGURATION. If the
+        // async configuration event observed null, retry once here before deciding. This preserves
+        // direct standalone behavior while giving transparent Velocity mode a supported late gate.
+        if (session.decision() == null && !session.playHandshakeRequired()) {
+            evaluateStandaloneConfiguration(connection, session, true);
+        }
+
         if (session.playHandshakeRequired() && session.decision() == null) {
-            getLogger().info(() -> "Phase 0A CONFIGURATION gate passed for " + displayName(connection)
+            getLogger().info(() -> "Standalone CONFIGURATION gate passed for " + displayName(connection)
                 + ": compatible Cerberus presence detected; nonce handshake deferred to quarantined PLAY.");
             return; // Keep the session for PlayerJoinEvent / PLAY plugin messaging.
         }
 
         GuardianDecision decision = session.decision();
         if (decision == null) {
-            decision = GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR,
-                "configuration reached validation without a final Phase 0A decision");
+            decision = GuardianDecision.deny(DecisionReason.CLIENT_DENIED,
+                "client brand remained unavailable through final standalone validation");
+            session.decide(decision);
         }
 
-        GuardianDecision finalDecision = decision;
-        getLogger().info(() -> "Phase 0A pre-world decision for " + displayName(connection) + ": "
-            + finalDecision.outcome() + " / " + finalDecision.reason() + " (" + finalDecision.detail() + ")");
+        GuardianDecision finalDecision = session.decision();
+        getLogger().info(() -> "Standalone pre-world decision for " + displayName(connection) + ": "
+            + finalDecision.outcome() + " / " + finalDecision.reason() + " ("
+            + finalDecision.detail() + ")");
 
-        if (decision.outcome() == DecisionOutcome.DENY) {
-            event.kickMessage(Component.text(GuardianMessages.forReason(decision.reason())));
+        if (finalDecision.outcome() == DecisionOutcome.DENY) {
+            event.kickMessage(Component.text(GuardianMessages.forReason(finalDecision.reason())));
         }
         sessions.remove(playerId, session);
+    }
+
+    private void evaluateStandaloneConfiguration(
+        PlayerConfigurationConnection connection, AdmissionSession session, boolean finalAttempt
+    ) {
+        if (session.decision() != null || session.playHandshakeRequired()) {
+            return;
+        }
+
+        String brand = connection.getClientBrandName();
+        if (brand == null || brand.isBlank()) {
+            getLogger().info(() -> "Standalone configuration for " + displayName(connection)
+                + ": brand is not yet available; " + (finalAttempt ? "final validation will deny"
+                : "deferring classification to PlayerConnectionValidateLoginEvent")
+                + ", cerberusPresent=" + session.cerberusPresent());
+            return;
+        }
+
+        ClientClassification classification = BrandClassifier.classify(brand);
+        getLogger().info(() -> "Standalone configuration evaluation for " + displayName(connection)
+            + ": brand=" + brand
+            + ", classification=" + classification
+            + ", cerberusPresent=" + session.cerberusPresent()
+            + ", cerberusProtocol=" + session.cerberusProtocol()
+            + ", listeningChannels=" + connection.getListeningPluginChannels());
+
+        if (classification == ClientClassification.JAVA_VANILLA) {
+            session.decide(GuardianDecision.allow(DecisionReason.VANILLA_POLICY,
+                "vanilla allowed by standalone Paper authority"));
+            return;
+        }
+        if (classification != ClientClassification.JAVA_FABRIC) {
+            session.decide(GuardianDecision.deny(DecisionReason.CLIENT_DENIED,
+                "unsupported/unknown standalone brand: " + brand));
+            return;
+        }
+
+        // Malformed presence or incompatible protocol may already have produced a structured denial.
+        if (session.decision() != null) {
+            return;
+        }
+        if (!session.cerberusPresent()) {
+            session.decide(GuardianDecision.deny(DecisionReason.CERBERUS_REQUIRED,
+                "Fabric client did not send the Cerberus CONFIGURATION presence payload"));
+            return;
+        }
+
+        // Paper's supported CONFIGURATION send path still has the Fabric registration limitation
+        // proven in Phase 0A. Defer only the nonce challenge/response to quarantined PLAY.
+        session.requirePlayHandshake();
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -308,16 +381,85 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             return;
         }
 
+        if (GuardianProtocol.PROXY_ADMISSION_CHANNEL.equals(channel)) {
+            if (authorityMode == PaperAuthorityMode.VELOCITY) {
+                handleProxyAdmission(configurationConnection, session, message);
+            } else {
+                getLogger().warning("Ignoring proxy admission assertion while Paper is in standalone authority mode for "
+                    + displayName(configurationConnection));
+            }
+            return;
+        }
+
+        if (authorityMode == PaperAuthorityMode.VELOCITY) {
+            // Guardian-Velocity is required to consume the client-facing Cerberus channels. If one
+            // reaches the backend, the network trust boundary is not behaving as designed.
+            if (GuardianProtocol.PRESENCE_CHANNEL.equals(channel)
+                || GuardianProtocol.RESPONSE_CHANNEL.equals(channel)) {
+                session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR,
+                    "client-facing Guardian channel leaked through Velocity to the backend"));
+                getLogger().warning("Phase 0B.2 channel-isolation violation for "
+                    + displayName(configurationConnection) + ": " + channel);
+            }
+            return;
+        }
+
         if (GuardianProtocol.PRESENCE_CHANNEL.equals(channel)) {
             handleConfigurationPresence(configurationConnection, session, message);
             return;
         }
         if (GuardianProtocol.RESPONSE_CHANNEL.equals(channel)) {
-            // A CONFIGURATION response is not expected in fallback mode, but keep malformed/stray
-            // data from being silently mistaken for a successful PLAY handshake.
+            // A CONFIGURATION response is not expected in standalone fallback mode.
             session.decide(GuardianDecision.deny(DecisionReason.MANIFEST_INVALID,
                 "unexpected Cerberus response during CONFIGURATION fallback mode"));
         }
+    }
+
+    private void handleProxyAdmission(
+        PlayerConfigurationConnection connection, AdmissionSession session, byte[] message
+    ) {
+        if (proxySecret == null) {
+            session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR,
+                "Velocity authority configured without an available shared proxy secret"));
+            return;
+        }
+
+        final ProxyAdmissionAssertion assertion;
+        try {
+            assertion = ProxyAdmissionCodec.decodeAndVerify(message, proxySecret);
+        } catch (ProtocolException | IllegalArgumentException ex) {
+            session.decide(GuardianDecision.deny(DecisionReason.PROXY_ASSERTION_INVALID,
+                "invalid trusted proxy assertion: " + ex.getMessage()));
+            getLogger().warning("Rejected Phase 0B.2 proxy assertion for " + displayName(connection)
+                + ": " + ex.getMessage());
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        UUID expectedPlayerId = requirePlayerId(connection);
+        if (expectedPlayerId == null) {
+            session.decide(GuardianDecision.deny(DecisionReason.PROXY_ASSERTION_INVALID,
+                "authenticated player UUID unavailable while verifying proxy assertion"));
+            return;
+        }
+        GuardianDecision metadataDecision = ProxyAdmissionValidator.validate(assertion, expectedPlayerId, now);
+        if (metadataDecision.outcome() == DecisionOutcome.DENY) {
+            session.decide(metadataDecision);
+            getLogger().warning("Rejected Phase 0B.2 proxy assertion metadata for "
+                + displayName(connection) + ": " + metadataDecision.detail());
+            return;
+        }
+
+        if (!session.recordProxyAdmission(assertion)) {
+            session.decide(GuardianDecision.deny(DecisionReason.PROXY_ASSERTION_INVALID,
+                "conflicting duplicate proxy admission assertion"));
+            return;
+        }
+
+        session.decide(metadataDecision);
+        getLogger().info(() -> "Phase 0B.2 trusted proxy admission received for " + displayName(connection)
+            + ": session=" + HexFormat.of().formatHex(assertion.proxySessionId())
+            + ", expiresInMs=" + Math.max(0L, assertion.expiresAtEpochMillis() - now));
     }
 
     private void handleConfigurationPresence(PlayerConfigurationConnection connection, AdmissionSession session, byte[] message) {
@@ -511,7 +653,26 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
     }
 
 
-    private void loadPhase0Timing() {
+    private void loadPhase0Settings() {
+        String configuredAuthority = getConfig().getString("phase0.authority", "standalone");
+        try {
+            authorityMode = PaperAuthorityMode.parse(configuredAuthority);
+        } catch (IllegalArgumentException ex) {
+            getLogger().severe(ex.getMessage() + "; failing closed with VELOCITY authority mode.");
+            authorityMode = PaperAuthorityMode.VELOCITY;
+        }
+
+        proxySecret = null;
+        if (authorityMode == PaperAuthorityMode.VELOCITY) {
+            try {
+                proxySecret = ProxyAdmissionCodec.decodeBase64Secret(
+                    System.getenv("GUARDIAN_PHASE0B_PROXY_SECRET"));
+            } catch (IllegalArgumentException ex) {
+                getLogger().severe("Velocity authority requires GUARDIAN_PHASE0B_PROXY_SECRET to be a "
+                    + "Base64-encoded 32-byte secret. Connections will fail closed: " + ex.getMessage());
+            }
+        }
+
         int timeoutSeconds = getConfig().getInt(
             "phase0.handshake-timeout-seconds",
             DEFAULT_HANDSHAKE_TIMEOUT_SECONDS

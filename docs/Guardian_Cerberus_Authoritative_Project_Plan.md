@@ -1131,6 +1131,19 @@ Required tests:
 
 **Exit criterion:** Decide whether Guardian-Velocity is suitable as the preferred BadWolfMC production authority while preserving standalone Paper operation.
 
+### Phase 0B checkpoint — 2026-09-22
+
+Live testing of the first Velocity prototype has confirmed several previously open architectural questions:
+
+- Guardian-Velocity and Cerberus can complete the bounded nonce challenge/response bidirectionally during Velocity's supported CONFIGURATION lifecycle.
+- Velocity's awaited configuration event can hold the client before PLAY/world entry until Guardian reaches a structured admission decision.
+- A successful Fabric + Cerberus decision releases normally without the standalone Paper PLAY quarantine.
+- Guardian-Velocity can consume the registered Cerberus security channels so they do not leak to Guardian-Paper; with both adapters installed, Paper observed no Cerberus presence while Velocity completed the handshake.
+- The proxy's backend connection is already established/configuring while the awaited Guardian decision runs. The supported invariant is therefore **before PLAY/world entry**, not **before any backend network contact**.
+- Plain Velocity currently exposes a timing difference to Guardian-Paper: Paper's async configuration hook can observe `clientBrand == null` even though Velocity has learned the Fabric brand. Current Velocity source stores the client brand and mirrors it to the backend later when backend configuration is finishing. A supported late Paper classification retry is therefore worth testing; transparent Velocity compatibility is not yet declared proven.
+
+These results are sufficient to prefer the Velocity CONFIGURATION transport over the standalone Paper transport for continued Phase 0B work, but **Phase 0B is not complete**. The next checkpoint must prove a trusted, client-unforgeable Velocity → Paper admission assertion and its ordering relative to Paper's final pre-world validation. Geyser/Floodgate classification and backend switching remain subsequent acceptance items.
+
 ---
 
 ## Phase 1 — Foundation and BrandBlocker rewrite
@@ -1492,6 +1505,6 @@ The original stronger all-CONFIGURATION standalone assumption was tested rather 
 
 The selected standalone hybrid is proven in live testing and preserves the most valuable pre-world behavior while remaining entirely on supported APIs.
 
-The next major technical uncertainty is the Velocity-authoritative path: whether Velocity can complete the Cerberus exchange during its awaited CONFIGURATION lifecycle, keep Guardian channels from leaking to backends, carry a trusted admission assertion to Guardian-Paper, and correctly classify Geyser/Floodgate clients.
+The Velocity CONFIGURATION transport and client-channel isolation are now live-proven. The next major technical uncertainty is narrower: whether a short-lived, infrastructure-authenticated Velocity admission assertion can reach Guardian-Paper in time for its final pre-world gate, remain unforgeable by a normal client, and then be reused cleanly across backend switches. Geyser/Floodgate classification remains to be proven after that trust path.
 
-The project should proceed to Phase 0B while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.
+The project should continue Phase 0B while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.

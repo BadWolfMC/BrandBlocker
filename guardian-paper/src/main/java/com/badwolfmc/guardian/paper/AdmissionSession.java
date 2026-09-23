@@ -1,6 +1,7 @@
 package com.badwolfmc.guardian.paper;
 
 import com.badwolfmc.guardian.core.GuardianDecision;
+import com.badwolfmc.guardian.protocol.ProxyAdmissionAssertion;
 import com.badwolfmc.guardian.protocol.Response;
 
 import java.util.UUID;
@@ -13,6 +14,7 @@ final class AdmissionSession {
     private final CompletableFuture<Response> response = new CompletableFuture<>();
     private final AtomicReference<GuardianDecision> decision = new AtomicReference<>();
     private final AtomicBoolean challengeSent = new AtomicBoolean();
+    private final AtomicReference<ProxyAdmissionAssertion> proxyAdmission = new AtomicReference<>();
     private volatile byte[] nonce;
     private volatile boolean cerberusPresent;
     private volatile Integer cerberusProtocol;
@@ -87,4 +89,19 @@ final class AdmissionSession {
     boolean quarantined() {
         return quarantined;
     }
+
+    ProxyAdmissionAssertion proxyAdmission() {
+        return proxyAdmission.get();
+    }
+
+    synchronized boolean recordProxyAdmission(ProxyAdmissionAssertion assertion) {
+        ProxyAdmissionAssertion existing = proxyAdmission.get();
+        if (existing != null) {
+            return java.util.Arrays.equals(existing.proxySessionId(), assertion.proxySessionId())
+                && existing.playerId().equals(assertion.playerId());
+        }
+        proxyAdmission.set(assertion);
+        return true;
+    }
+
 }

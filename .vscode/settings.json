@@ -1,4 +1,5 @@
 {
+    "files.eol": "\n",
     "java.server.launchMode": "Standard",
     "java.configuration.updateBuildConfiguration": "automatic",
     "java.project.importOnFirstTimeStartup": "automatic",

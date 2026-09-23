@@ -51,7 +51,7 @@ public final class CerberusClient implements ClientModInitializer {
 
     private static void registerConfigurationTransport() {
         ClientConfigurationNetworking.registerGlobalReceiver(ChallengePayload.TYPE, (payload, context) -> {
-            LOGGER.warn("Unexpected Guardian CONFIGURATION challenge received; responding for diagnostics.");
+            LOGGER.info("Guardian CONFIGURATION challenge received; responding.");
             respondToChallenge(payload, context.responseSender(), "CONFIGURATION");
         });
 
@@ -113,8 +113,20 @@ public final class CerberusClient implements ClientModInitializer {
         try {
             Challenge challenge = ProtocolCodec.decodeChallenge(payload.bytes());
 
+            // Re-announce presence when Guardian actively challenges us. On Velocity, the initial
+            // CONFIGURATION START presence can arrive before a backend connection is in flight and
+            // therefore before Velocity exposes plugin messages to plugins. Re-announcing here makes
+            // the distinct CERBERUS_REQUIRED vs CERBERUS_TIMEOUT states robust without changing the
+            // standalone Paper Phase 0A fallback.
+            int responseProtocol = selectedProtocol();
+            sender.sendPacket(new PresencePayload(ProtocolCodec.encodePresence(new Presence(responseProtocol))));
+
             if (Boolean.getBoolean("cerberus.phase0a.suppressResponse")) {
-                LOGGER.info("Received Guardian {} challenge; deliberately suppressing the response for timeout testing.", phase);
+                LOGGER.info(
+                    "Received Guardian {} challenge; re-announced presence then deliberately suppressed "
+                        + "the response for timeout testing.",
+                    phase
+                );
                 return;
             }
 
@@ -124,7 +136,6 @@ public final class CerberusClient implements ClientModInitializer {
                 return;
             }
 
-            int responseProtocol = selectedProtocol();
             List<ManifestEntry> manifest = buildTestManifest();
             Response response = new Response(responseProtocol, challenge.nonce(), manifest);
             sender.sendPacket(new ResponsePayload(ProtocolCodec.encodeResponse(response)));

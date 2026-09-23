@@ -1,6 +1,12 @@
 # Phase 0A feasibility-spike timing only.
 # Production configuration will be designed in a later phase.
 phase0:
+  # Authority mode for this Paper server.
+  # - standalone: Guardian-Paper performs the Phase 0A hybrid admission itself.
+  # - velocity: Guardian-Velocity is authoritative; Paper verifies only a trusted
+  #   guardian:proxy-admission assertion and does not re-attest Cerberus.
+  authority: standalone
+
   # Maximum time a compatible Cerberus client may remain in the PLAY quarantine
   # while the nonce challenge/response is completed.
   handshake-timeout-seconds: 10

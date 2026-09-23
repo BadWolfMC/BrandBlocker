@@ -8,6 +8,8 @@ final class GuardianMessages {
 
     static String forReason(DecisionReason reason) {
         return switch (reason) {
+            case PROXY_ASSERTION_REQUIRED -> "Guardian-Velocity did not provide a trusted admission assertion.";
+            case PROXY_ASSERTION_INVALID -> "Guardian received an invalid proxy admission assertion.";
             case CERBERUS_REQUIRED -> "Fabric is supported, but the Cerberus client mod is required.";
             case CERBERUS_TIMEOUT -> "Cerberus was detected, but the Guardian handshake timed out.";
             case CERBERUS_PROTOCOL_UNSUPPORTED -> "Cerberus is installed, but its Guardian protocol version is incompatible.";
