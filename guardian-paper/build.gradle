@@ -6,6 +6,7 @@ dependencies {
     implementation project(':guardian-core')
     implementation project(':guardian-protocol')
     compileOnly "io.papermc.paper:paper-api:${paper_api_version}"
+    compileOnly "org.geysermc.floodgate:api:${floodgate_api_version}"
 
     testImplementation platform('org.junit:junit-bom:5.13.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'

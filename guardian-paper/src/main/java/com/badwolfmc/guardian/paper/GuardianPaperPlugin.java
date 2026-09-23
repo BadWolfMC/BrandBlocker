@@ -8,6 +8,7 @@ import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.core.Phase0ResponseValidator;
 import com.badwolfmc.guardian.core.ProxyAdmissionValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
+import com.badwolfmc.guardian.protocol.ConnectionOrigin;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
@@ -81,7 +82,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
         getServer().getMessenger().registerIncomingPluginChannel(this, GuardianProtocol.PROXY_ADMISSION_CHANNEL, this);
         getServer().getPluginManager().registerEvents(this, this);
         if (authorityMode == PaperAuthorityMode.VELOCITY) {
-            getLogger().info("Guardian Phase 0B.2 Paper backend enabled in VELOCITY authority mode; "
+            getLogger().info("Guardian Phase 0B.3 Paper backend enabled in VELOCITY authority mode; "
                 + "local Cerberus policy evaluation is disabled and a trusted proxy assertion is required.");
         } else {
             getLogger().info("Guardian standalone Paper authority enabled; CONFIGURATION presence + PLAY quarantine "
@@ -128,7 +129,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
         }
 
         if (authorityMode == PaperAuthorityMode.VELOCITY) {
-            getLogger().info(() -> "Phase 0B.2 backend configuration for " + displayName(connection)
+            getLogger().info(() -> "Phase 0B.3 backend configuration for " + displayName(connection)
                 + ": authority=VELOCITY, brand=" + String.valueOf(connection.getClientBrandName())
                 + ", proxyAssertion=" + (session.proxyAdmission() != null ? "present" : "pending"));
             // Do not wait here. Velocity's PlayerConfigurationEvent is fired after the backend has
@@ -169,7 +170,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             }
 
             GuardianDecision finalDecision = session.decision();
-            getLogger().info(() -> "Phase 0B.2 backend pre-world decision for " + displayName(connection) + ": "
+            getLogger().info(() -> "Phase 0B.3 backend pre-world decision for " + displayName(connection) + ": "
                 + finalDecision.outcome() + " / " + finalDecision.reason() + " ("
                 + finalDecision.detail() + ")");
             if (finalDecision.outcome() == DecisionOutcome.DENY) {
@@ -398,7 +399,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
                 || GuardianProtocol.RESPONSE_CHANNEL.equals(channel)) {
                 session.decide(GuardianDecision.deny(DecisionReason.CONFIGURATION_ERROR,
                     "client-facing Guardian channel leaked through Velocity to the backend"));
-                getLogger().warning("Phase 0B.2 channel-isolation violation for "
+                getLogger().warning("Phase 0B.3 channel-isolation violation for "
                     + displayName(configurationConnection) + ": " + channel);
             }
             return;
@@ -430,7 +431,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
         } catch (ProtocolException | IllegalArgumentException ex) {
             session.decide(GuardianDecision.deny(DecisionReason.PROXY_ASSERTION_INVALID,
                 "invalid trusted proxy assertion: " + ex.getMessage()));
-            getLogger().warning("Rejected Phase 0B.2 proxy assertion for " + displayName(connection)
+            getLogger().warning("Rejected Phase 0B.3 proxy assertion for " + displayName(connection)
                 + ": " + ex.getMessage());
             return;
         }
@@ -445,7 +446,7 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
         GuardianDecision metadataDecision = ProxyAdmissionValidator.validate(assertion, expectedPlayerId, now);
         if (metadataDecision.outcome() == DecisionOutcome.DENY) {
             session.decide(metadataDecision);
-            getLogger().warning("Rejected Phase 0B.2 proxy assertion metadata for "
+            getLogger().warning("Rejected Phase 0B.3 proxy assertion metadata for "
                 + displayName(connection) + ": " + metadataDecision.detail());
             return;
         }
@@ -456,10 +457,50 @@ public final class GuardianPaperPlugin extends JavaPlugin implements Listener, P
             return;
         }
 
+        sanityCheckBackendFloodgate(connection, assertion);
         session.decide(metadataDecision);
-        getLogger().info(() -> "Phase 0B.2 trusted proxy admission received for " + displayName(connection)
+        getLogger().info(() -> "Phase 0B.3 trusted proxy admission received for " + displayName(connection)
             + ": session=" + HexFormat.of().formatHex(assertion.proxySessionId())
+            + ", origin=" + assertion.connectionOrigin()
             + ", expiresInMs=" + Math.max(0L, assertion.expiresAtEpochMillis() - now));
+    }
+
+    private void sanityCheckBackendFloodgate(
+        PlayerConfigurationConnection connection, ProxyAdmissionAssertion assertion
+    ) {
+        boolean proxyBedrock = assertion.connectionOrigin() == ConnectionOrigin.BEDROCK;
+        org.bukkit.plugin.Plugin floodgate = getServer().getPluginManager().getPlugin("floodgate");
+        if (floodgate == null || !floodgate.isEnabled()) {
+            if (proxyBedrock) {
+                getLogger().info(() -> "Phase 0B.3 backend Floodgate sanity check skipped for "
+                    + displayName(connection) + ": proxy origin=BEDROCK, backend Floodgate unavailable.");
+            }
+            return;
+        }
+
+        final boolean backendBedrock;
+        try {
+            backendBedrock = FloodgateBackendLookup.isFloodgatePlayer(assertion.playerId());
+        } catch (RuntimeException | LinkageError ex) {
+            getLogger().warning("Phase 0B.3 backend Floodgate sanity check failed for "
+                + displayName(connection) + ": " + ex.getMessage());
+            return;
+        }
+
+        if (proxyBedrock == backendBedrock) {
+            getLogger().info(() -> "Phase 0B.3 backend Floodgate sanity check agrees for "
+                + displayName(connection) + ": proxyOrigin=" + assertion.connectionOrigin()
+                + ", backendFloodgate=" + backendBedrock);
+            return;
+        }
+
+        // Phase 0B.3 deliberately keeps Guardian-Velocity as the sole admission authority.
+        // A backend mismatch is observable defense-in-depth evidence, not a second policy engine.
+        // Production fail-closed behavior remains a later design decision after live testing.
+        getLogger().warning("Phase 0B.3 BACKEND FLOODGATE DISAGREEMENT for " + displayName(connection)
+            + ": proxyOrigin=" + assertion.connectionOrigin()
+            + ", backendFloodgate=" + backendBedrock
+            + ". Trusted proxy admission remains authoritative for this feasibility spike.");
     }
 
     private void handleConfigurationPresence(PlayerConfigurationConnection connection, AdmissionSession session, byte[] message) {

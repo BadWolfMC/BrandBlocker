@@ -79,12 +79,18 @@ public final class ProxyAdmissionCodec {
             if (proxySessionId.length != GuardianProtocol.PROXY_SESSION_ID_BYTES) {
                 throw new ProtocolException("truncated proxy session id");
             }
+            ConnectionOrigin connectionOrigin = switch (in.readUnsignedByte()) {
+                case 0 -> ConnectionOrigin.JAVA;
+                case 1 -> ConnectionOrigin.BEDROCK;
+                default -> throw new ProtocolException("invalid proxy connection origin");
+            };
             long issuedAt = in.readLong();
             long expiresAt = in.readLong();
             if (in.available() != 0) {
                 throw new ProtocolException("unexpected trailing proxy assertion bytes");
             }
-            return new ProxyAdmissionAssertion(assertionVersion, playerId, proxySessionId, issuedAt, expiresAt);
+            return new ProxyAdmissionAssertion(
+                assertionVersion, playerId, proxySessionId, connectionOrigin, issuedAt, expiresAt);
         } catch (EOFException ex) {
             throw new ProtocolException("truncated proxy assertion", ex);
         } catch (IOException ex) {
@@ -116,6 +122,10 @@ public final class ProxyAdmissionCodec {
                 out.writeLong(assertion.playerId().getMostSignificantBits());
                 out.writeLong(assertion.playerId().getLeastSignificantBits());
                 out.write(assertion.proxySessionId());
+                out.writeByte(switch (assertion.connectionOrigin()) {
+                    case JAVA -> 0;
+                    case BEDROCK -> 1;
+                });
                 out.writeLong(assertion.issuedAtEpochMillis());
                 out.writeLong(assertion.expiresAtEpochMillis());
             }

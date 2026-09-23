@@ -8,7 +8,7 @@ public final class GuardianProtocol {
     public static final int MAX_MOD_ID_BYTES = 64;
     public static final int MAX_VERSION_BYTES = 64;
 
-    public static final int PROXY_ASSERTION_VERSION = 1;
+    public static final int PROXY_ASSERTION_VERSION = 2;
     public static final int PROXY_SESSION_ID_BYTES = 16;
     public static final int PROXY_HMAC_BYTES = 32;
     public static final int PROXY_SECRET_BYTES = 32;

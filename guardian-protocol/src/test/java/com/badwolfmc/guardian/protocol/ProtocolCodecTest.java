@@ -70,6 +70,7 @@ class ProtocolCodecTest {
             GuardianProtocol.PROXY_ASSERTION_VERSION,
             playerId,
             sessionId,
+            ConnectionOrigin.BEDROCK,
             1_000L,
             16_000L
         );
@@ -82,6 +83,7 @@ class ProtocolCodecTest {
         assertEquals(original.assertionVersion(), decoded.assertionVersion());
         assertEquals(playerId, decoded.playerId());
         assertArrayEquals(sessionId, decoded.proxySessionId());
+        assertEquals(ConnectionOrigin.BEDROCK, decoded.connectionOrigin());
         assertEquals(1_000L, decoded.issuedAtEpochMillis());
         assertEquals(16_000L, decoded.expiresAtEpochMillis());
     }
@@ -95,6 +97,7 @@ class ProtocolCodecTest {
             GuardianProtocol.PROXY_ASSERTION_VERSION,
             java.util.UUID.randomUUID(),
             sessionId,
+            ConnectionOrigin.JAVA,
             1_000L,
             16_000L
         );

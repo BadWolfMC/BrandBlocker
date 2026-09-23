@@ -1,5 +1,6 @@
 package com.badwolfmc.guardian.core;
 
+import com.badwolfmc.guardian.protocol.ConnectionOrigin;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.ManifestEntry;
 import com.badwolfmc.guardian.protocol.Response;
@@ -18,6 +19,22 @@ class Phase0CoreTest {
         assertEquals(ClientClassification.JAVA_FABRIC, BrandClassifier.classify("fabric"));
         assertEquals(ClientClassification.JAVA_UNKNOWN, BrandClassifier.classify("fabric-but-not-really"));
         assertEquals(ClientClassification.JAVA_UNKNOWN, BrandClassifier.classify(null));
+    }
+
+    @Test
+    void supportedBedrockEvidencePrecedesJavaBrandClassification() {
+        assertEquals(ClientClassification.BEDROCK,
+            ClientOriginClassifier.classify(true, false, "fabric"));
+        assertEquals(ClientClassification.BEDROCK,
+            ClientOriginClassifier.classify(false, true, null));
+    }
+
+    @Test
+    void javaRemainsJavaWithoutSupportedBedrockEvidence() {
+        assertEquals(ClientClassification.JAVA_FABRIC,
+            ClientOriginClassifier.classify(false, false, "fabric"));
+        assertEquals(ClientClassification.JAVA_UNKNOWN,
+            ClientOriginClassifier.classify(false, false, "Geyser"));
     }
 
     @Test
@@ -83,6 +100,7 @@ class Phase0CoreTest {
                 GuardianProtocol.PROXY_ASSERTION_VERSION,
                 playerId,
                 sessionId,
+                ConnectionOrigin.JAVA,
                 now - 1_000L,
                 now + 5_000L
             );
@@ -97,6 +115,7 @@ class Phase0CoreTest {
                 GuardianProtocol.PROXY_ASSERTION_VERSION,
                 playerId,
                 sessionId,
+                ConnectionOrigin.JAVA,
                 now - 10_000L,
                 now - 1L
             );

@@ -98,7 +98,8 @@ final class AdmissionSession {
         ProxyAdmissionAssertion existing = proxyAdmission.get();
         if (existing != null) {
             return java.util.Arrays.equals(existing.proxySessionId(), assertion.proxySessionId())
-                && existing.playerId().equals(assertion.playerId());
+                && existing.playerId().equals(assertion.playerId())
+                && existing.connectionOrigin() == assertion.connectionOrigin();
         }
         proxyAdmission.set(assertion);
         return true;

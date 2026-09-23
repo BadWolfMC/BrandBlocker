@@ -1,11 +1,12 @@
 allprojects {
     group = 'com.badwolfmc.guardian'
-    version = '0.0.6-phase0b2'
+    version = '0.0.7-phase0b3'
 
     repositories {
         mavenCentral()
         maven { url = 'https://repo.papermc.io/repository/maven-public/' }
         maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://repo.opencollab.dev/main/' }
     }
 }
 

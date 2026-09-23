@@ -3,4 +3,5 @@ version: '${version}'
 main: com.badwolfmc.guardian.paper.GuardianPaperPlugin
 api-version: '26.2'
 authors: [BadWolfMC]
-description: Guardian/Cerberus Phase 0B Paper authority-mode feasibility spike.
+description: Guardian/Cerberus Phase 0B.3 Geyser/Floodgate feasibility spike.
+softdepend: [floodgate]

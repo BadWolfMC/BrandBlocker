@@ -11,12 +11,14 @@ public record ProxyAdmissionAssertion(
     int assertionVersion,
     UUID playerId,
     byte[] proxySessionId,
+    ConnectionOrigin connectionOrigin,
     long issuedAtEpochMillis,
     long expiresAtEpochMillis
 ) {
     public ProxyAdmissionAssertion {
         Objects.requireNonNull(playerId, "playerId");
         Objects.requireNonNull(proxySessionId, "proxySessionId");
+        Objects.requireNonNull(connectionOrigin, "connectionOrigin");
         if (proxySessionId.length != GuardianProtocol.PROXY_SESSION_ID_BYTES) {
             throw new IllegalArgumentException(
                 "proxySessionId must be " + GuardianProtocol.PROXY_SESSION_ID_BYTES + " bytes");

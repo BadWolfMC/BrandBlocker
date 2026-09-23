@@ -1,12 +1,13 @@
 package com.badwolfmc.guardian.velocity;
 
-import com.badwolfmc.guardian.core.BrandClassifier;
 import com.badwolfmc.guardian.core.ClientClassification;
+import com.badwolfmc.guardian.core.ClientOriginClassifier;
 import com.badwolfmc.guardian.core.DecisionOutcome;
 import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.core.Phase0ResponseValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
+import com.badwolfmc.guardian.protocol.ConnectionOrigin;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
 import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
@@ -21,6 +22,7 @@ import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.player.configuration.PlayerConfigurationEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.plugin.Dependency;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -38,18 +40,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Phase 0B.2 Velocity feasibility spike.
+ * Phase 0B.3 Velocity feasibility spike.
  *
- * <p>This checkpoint adds a trusted, short-lived Velocity-to-Paper admission assertion to the
- * already-proven proxy-side CONFIGURATION handshake. Geyser/Floodgate classification remains
- * deferred to the next Phase 0B checkpoint.</p>
+ * <p>This checkpoint adds supported Geyser/Floodgate Bedrock classification to the already-proven
+ * proxy-side CONFIGURATION admission path and carries trusted connection origin to Paper for a
+ * backend Floodgate sanity check.</p>
  */
 @Plugin(
     id = "guardian",
     name = "Guardian",
-    version = "0.0.6-phase0b2",
-    description = "Guardian Phase 0B.2 Velocity feasibility spike",
-    authors = {"BadWolfMC"}
+    version = "0.0.7-phase0b3",
+    description = "Guardian Phase 0B.3 Geyser/Floodgate feasibility spike",
+    authors = {"BadWolfMC"},
+    dependencies = {
+        @Dependency(id = "geyser", optional = true),
+        @Dependency(id = "floodgate", optional = true)
+    }
 )
 public final class GuardianVelocityPlugin {
     private static final int HANDSHAKE_TIMEOUT_SECONDS = 10;
@@ -67,12 +73,14 @@ public final class GuardianVelocityPlugin {
     private final Logger logger;
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentHashMap<UUID, VelocityAdmissionSession> sessions = new ConcurrentHashMap<>();
+    private final BedrockDetector bedrockDetector;
     private byte[] proxySecret;
 
     @Inject
     public GuardianVelocityPlugin(ProxyServer server, Logger logger) {
         this.server = server;
         this.logger = logger;
+        this.bedrockDetector = new BedrockDetector(server, logger);
     }
 
     @Subscribe
@@ -84,11 +92,11 @@ public final class GuardianVelocityPlugin {
         try {
             proxySecret = ProxyAdmissionCodec.decodeBase64Secret(
                 System.getenv("GUARDIAN_PHASE0B_PROXY_SECRET"));
-            logger.info("Guardian Phase 0B.2 trusted proxy assertions enabled; timeout={}s.",
+            logger.info("Guardian Phase 0B.3 trusted proxy assertions enabled; timeout={}s.",
                 HANDSHAKE_TIMEOUT_SECONDS);
         } catch (IllegalArgumentException ex) {
             proxySecret = null;
-            logger.warn("Guardian Phase 0B.2 proxy assertions are unavailable because "
+            logger.warn("Guardian Phase 0B.3 proxy assertions are unavailable because "
                 + "GUARDIAN_PHASE0B_PROXY_SECRET is not a valid Base64-encoded 32-byte shared secret: {}. "
                 + "Proxy-side admission remains available, but Guardian-Paper in VELOCITY authority mode "
                 + "will fail closed without an assertion.",
@@ -103,7 +111,7 @@ public final class GuardianVelocityPlugin {
             player.getUniqueId(), ignored -> new VelocityAdmissionSession(newProxySessionId()));
 
         if (session.admitted()) {
-            logger.info("Guardian Phase 0B.2 reconfiguration for {}: reusing admission for this proxy connection.",
+            logger.info("Guardian Phase 0B.3 reconfiguration for {}: reusing admission for this proxy connection.",
                 player.getUsername());
             sendProxyAdmission(player, event.server(), session);
             return null;
@@ -115,15 +123,34 @@ public final class GuardianVelocityPlugin {
             return null;
         }
 
-        ClientClassification classification = BrandClassifier.classify(player.getClientBrand());
+        BedrockDetection bedrock = bedrockDetector.detect(player.getUniqueId());
+        if (bedrock.disagrees()) {
+            logger.warn("Guardian Phase 0B.3 Geyser/Floodgate disagreement for {}: geyser={}, floodgate={}; "
+                    + "treating positive supported API evidence as BEDROCK for this feasibility spike.",
+                player.getUsername(), bedrock.geyser(), bedrock.floodgate());
+        }
+
+        ClientClassification classification = ClientOriginClassifier.classify(
+            bedrock.geyser() == BedrockSignal.BEDROCK,
+            bedrock.floodgate() == BedrockSignal.BEDROCK,
+            player.getClientBrand());
         session.setClassification(classification);
-        logger.info("Guardian Phase 0B.2 configuration for {}: brand={}, classification={}, backend={}",
-            player.getUsername(), String.valueOf(player.getClientBrand()), classification,
-            event.server() == null ? "<none>" : event.server().getServerInfo().getName());
+        logger.info("Guardian Phase 0B.3 configuration for {}: brand={}, geyser={}, floodgate={}, "
+                + "classification={}, backend={}",
+            player.getUsername(), String.valueOf(player.getClientBrand()), bedrock.geyser(), bedrock.floodgate(),
+            classification, event.server() == null ? "<none>" : event.server().getServerInfo().getName());
+
+        if (classification == ClientClassification.BEDROCK) {
+            GuardianDecision decision = GuardianDecision.allow(
+                DecisionReason.BEDROCK_POLICY, "Bedrock allowed by Phase 0B.3 supported API classification");
+            session.decide(decision);
+            sendProxyAdmission(player, event.server(), session);
+            return null;
+        }
 
         if (classification == ClientClassification.JAVA_VANILLA) {
             GuardianDecision decision = GuardianDecision.allow(
-                DecisionReason.VANILLA_POLICY, "vanilla allowed by Phase 0B.2");
+                DecisionReason.VANILLA_POLICY, "vanilla allowed by Phase 0B.3");
             session.decide(decision);
             sendProxyAdmission(player, event.server(), session);
             return null;
@@ -132,7 +159,7 @@ public final class GuardianVelocityPlugin {
         if (classification != ClientClassification.JAVA_FABRIC) {
             GuardianDecision decision = GuardianDecision.deny(
                 DecisionReason.CLIENT_DENIED,
-                "unsupported/unknown Phase 0B.2 brand: " + String.valueOf(player.getClientBrand()));
+                "unsupported/unknown Phase 0B.3 brand: " + String.valueOf(player.getClientBrand()));
             session.decide(decision);
             applyDecision(player, decision);
             return null;
@@ -151,7 +178,7 @@ public final class GuardianVelocityPlugin {
         // PlayerConfigurationEvent is explicitly awaited by Velocity. Returning a continuation
         // task therefore holds progression in CONFIGURATION without blocking a Velocity worker.
         return EventTask.resumeWhenComplete(hold.exceptionally(throwable -> {
-            logger.error("Guardian Phase 0B.2 admission future failed for {}", player.getUsername(), throwable);
+            logger.error("Guardian Phase 0B.3 admission future failed for {}", player.getUsername(), throwable);
             player.disconnect(Component.text(messageFor(DecisionReason.CONFIGURATION_ERROR)));
             return null;
         }));
@@ -169,7 +196,7 @@ public final class GuardianVelocityPlugin {
         event.setResult(PluginMessageEvent.ForwardResult.handled());
 
         if (!(event.getSource() instanceof Player player)) {
-            logger.debug("Consumed backend-origin Guardian channel {} during Phase 0B.2.", identifier.getId());
+            logger.debug("Consumed backend-origin Guardian channel {} during Phase 0B.3.", identifier.getId());
             return;
         }
 
@@ -199,7 +226,7 @@ public final class GuardianVelocityPlugin {
     private void handlePresence(Player player, VelocityAdmissionSession session, byte[] data) {
         if (data.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {
             session.decide(GuardianDecision.deny(
-                DecisionReason.MANIFEST_INVALID, "CONFIGURATION presence exceeds Phase 0B.2 limit"));
+                DecisionReason.MANIFEST_INVALID, "CONFIGURATION presence exceeds Phase 0B.3 limit"));
             return;
         }
 
@@ -219,7 +246,7 @@ public final class GuardianVelocityPlugin {
             return;
         }
 
-        logger.info("Guardian Phase 0B.2 Cerberus presence from {}: protocol={}",
+        logger.info("Guardian Phase 0B.3 Cerberus presence from {}: protocol={}",
             player.getUsername(), presence.protocolVersion());
 
         if (presence.protocolVersion() != GuardianProtocol.VERSION) {
@@ -249,7 +276,7 @@ public final class GuardianVelocityPlugin {
                 ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce))
             );
         } catch (RuntimeException ex) {
-            logger.warn("Could not send Guardian Phase 0B.2 CONFIGURATION challenge to {}.",
+            logger.warn("Could not send Guardian Phase 0B.3 CONFIGURATION challenge to {}.",
                 player.getUsername(), ex);
             session.decide(GuardianDecision.deny(
                 DecisionReason.CONFIGURATION_ERROR, "Velocity CONFIGURATION challenge send failed"));
@@ -263,7 +290,7 @@ public final class GuardianVelocityPlugin {
             return;
         }
 
-        logger.info("Guardian Phase 0B.2 CONFIGURATION challenge sent to {}.", player.getUsername());
+        logger.info("Guardian Phase 0B.3 CONFIGURATION challenge sent to {}.", player.getUsername());
     }
 
     private void handleResponse(Player player, VelocityAdmissionSession session, byte[] data) {
@@ -277,7 +304,7 @@ public final class GuardianVelocityPlugin {
         }
         if (data.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {
             session.decide(GuardianDecision.deny(
-                DecisionReason.MANIFEST_INVALID, "CONFIGURATION response exceeds Phase 0B.2 limit"));
+                DecisionReason.MANIFEST_INVALID, "CONFIGURATION response exceeds Phase 0B.3 limit"));
             return;
         }
 
@@ -293,7 +320,7 @@ public final class GuardianVelocityPlugin {
 
         GuardianDecision decision = Phase0ResponseValidator.validate(session.nonce(), response);
         session.decide(decision);
-        logger.info("Guardian Phase 0B.2 CONFIGURATION response from {}: {} / {} ({})",
+        logger.info("Guardian Phase 0B.3 CONFIGURATION response from {}: {} / {} ({})",
             player.getUsername(), decision.outcome(), decision.reason(), decision.detail());
     }
 
@@ -319,13 +346,13 @@ public final class GuardianVelocityPlugin {
             }
 
             if (session.decide(timeoutDecision)) {
-                logger.info("Guardian Phase 0B.2 timeout for {}: {}", player.getUsername(), timeoutDecision.reason());
+                logger.info("Guardian Phase 0B.3 timeout for {}: {}", player.getUsername(), timeoutDecision.reason());
             }
         });
     }
 
     private void applyDecision(Player player, GuardianDecision decision) {
-        logger.info("Guardian Phase 0B.2 decision for {}: {} / {} ({})",
+        logger.info("Guardian Phase 0B.3 decision for {}: {} / {} ({})",
             player.getUsername(), decision.outcome(), decision.reason(), decision.detail());
         if (decision.outcome() == DecisionOutcome.DENY) {
             player.disconnect(Component.text(messageFor(decision.reason())));
@@ -336,13 +363,13 @@ public final class GuardianVelocityPlugin {
         Player player, ServerConnection backend, VelocityAdmissionSession session
     ) {
         if (backend == null) {
-            logger.warn("Guardian Phase 0B.2 could not assert admission for {} because no backend "
+            logger.warn("Guardian Phase 0B.3 could not assert admission for {} because no backend "
                 + "configuration connection is available. Proxy-side admission remains authoritative.",
                 player.getUsername());
             return false;
         }
         if (proxySecret == null) {
-            logger.warn("Guardian Phase 0B.2 did not assert admission for {} -> {} because the shared "
+            logger.warn("Guardian Phase 0B.3 did not assert admission for {} -> {} because the shared "
                 + "proxy secret is unavailable. A Guardian-Paper backend in VELOCITY authority mode "
                 + "will fail closed.",
                 player.getUsername(), backend.getServerInfo().getName());
@@ -350,10 +377,14 @@ public final class GuardianVelocityPlugin {
         }
 
         long issuedAt = System.currentTimeMillis();
+        ConnectionOrigin connectionOrigin = session.classification() == ClientClassification.BEDROCK
+            ? ConnectionOrigin.BEDROCK
+            : ConnectionOrigin.JAVA;
         ProxyAdmissionAssertion assertion = new ProxyAdmissionAssertion(
             GuardianProtocol.PROXY_ASSERTION_VERSION,
             player.getUniqueId(),
             session.proxySessionId(),
+            connectionOrigin,
             issuedAt,
             issuedAt + GuardianProtocol.PROXY_ASSERTION_TTL_MILLIS
         );
@@ -365,20 +396,20 @@ public final class GuardianVelocityPlugin {
                 ProxyAdmissionCodec.encode(assertion, proxySecret)
             );
         } catch (RuntimeException ex) {
-            logger.warn("Guardian Phase 0B.2 proxy assertion send failed for {} -> {}.",
+            logger.warn("Guardian Phase 0B.3 proxy assertion send failed for {} -> {}.",
                 player.getUsername(), backend.getServerInfo().getName(), ex);
             return false;
         }
 
         if (!sent) {
-            logger.error("Guardian Phase 0B.2 backend {} declined proxy assertion for {}.",
+            logger.error("Guardian Phase 0B.3 backend {} declined proxy assertion for {}.",
                 backend.getServerInfo().getName(), player.getUsername());
             return false;
         }
 
-        logger.info("Guardian Phase 0B.2 trusted admission asserted for {} -> {}: session={}",
+        logger.info("Guardian Phase 0B.3 trusted admission asserted for {} -> {}: session={}, origin={}",
             player.getUsername(), backend.getServerInfo().getName(),
-            HexFormat.of().formatHex(session.proxySessionId()));
+            HexFormat.of().formatHex(session.proxySessionId()), connectionOrigin);
         return true;
     }
 
