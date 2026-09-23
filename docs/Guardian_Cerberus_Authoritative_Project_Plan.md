@@ -294,9 +294,9 @@ A positively classified Bedrock connection MUST NOT receive a Cerberus challenge
 
 A Java player whose username resembles the configured Floodgate prefix MUST NOT be classified as Bedrock solely because of that name.
 
-In Velocity-authoritative BadWolfMC deployment, Geyser/Floodgate classification at the proxy SHOULD be authoritative for connection origin.
+In BadWolfMC's Velocity-authoritative deployment, Geyser/Floodgate classification at Guardian-Velocity is authoritative for connection origin.
 
-Guardian-Paper MAY sanity-check the proxy assertion against backend Floodgate state when backend Floodgate information is available.
+Guardian-Paper MAY sanity-check the proxy assertion against backend Floodgate state when backend Floodgate information is available, but that sanity check MUST NOT become a second independent policy authority.
 
 Unexpected disagreement between trusted proxy classification and backend Floodgate classification SHOULD be logged prominently and MUST have deterministic handling.
 
@@ -763,18 +763,19 @@ The 26.3 port SHOULD re-test CONFIGURATION interoperability rather than permanen
 
 ## 22. Velocity configuration-phase networking
 
-Guardian-Velocity SHOULD attempt to perform the authoritative Cerberus handshake during Velocity's supported configuration-stage lifecycle.
+In Velocity-authoritative mode, Guardian-Velocity performs the authoritative Cerberus handshake during Velocity's supported configuration-stage lifecycle.
 
-Phase 0B must prove:
+Phase 0B live testing proved:
 
 - client ↔ proxy custom payload exchange;
-- deterministic hold/release behavior;
+- deterministic CONFIGURATION hold/release behavior;
 - clear proxy-origin disconnect reasons;
-- security-sensitive channels are not leaked to backends;
-- server switching does not cause unnecessary re-attestation;
-- proxy admission state can be securely conveyed to Guardian-Paper.
+- security-sensitive Guardian/Cerberus channels are consumed at the proxy rather than leaked to backends;
+- short-lived authenticated proxy admission state reaches Guardian-Paper before its final pre-world decision;
+- server switching reuses the admission for the current proxy connection rather than unnecessarily re-attesting;
+- a full disconnect/reconnect creates a fresh admission session.
 
-Velocity support remains optional even if it becomes the preferred BadWolfMC production deployment.
+Velocity is the preferred BadWolfMC production admission authority. Velocity support remains optional for Guardian generally; standalone Guardian-Paper remains supported.
 
 ---
 
@@ -790,9 +791,9 @@ Reason:
 - a new connection is cheap to attest;
 - long-lived trust records would weaken the relationship between the current process and the current decision.
 
-In Velocity-authoritative mode, the successful result MAY be cached for the lifetime of the proxy connection so Alpha → Beta → Gamma → Delta server changes do not repeatedly inventory the same running client.
+In Velocity-authoritative mode, the successful result SHOULD be cached only for the lifetime of the current proxy connection so Alpha → Beta → Gamma → Delta server changes do not repeatedly inventory the same running client.
 
-A new proxy login SHOULD require a new session/challenge.
+A new proxy login MUST create a fresh admission session. If the new connection requires Cerberus, it MUST perform a fresh challenge rather than reuse the previous connection's admission.
 
 ---
 
@@ -1144,6 +1145,45 @@ Live testing of the first Velocity prototype has confirmed several previously op
 
 These results are sufficient to prefer the Velocity CONFIGURATION transport over the standalone Paper transport for continued Phase 0B work, but **Phase 0B is not complete**. The next checkpoint must prove a trusted, client-unforgeable Velocity → Paper admission assertion and its ordering relative to Paper's final pre-world validation. Geyser/Floodgate classification and backend switching remain subsequent acceptance items.
 
+### Phase 0B closeout — 2026-09-23
+
+Subsequent implementation and live testing completed the remaining Phase 0B acceptance items.
+
+Trusted Velocity → Paper admission:
+
+- Guardian-Velocity sends a short-lived HMAC-authenticated admission assertion over a dedicated proxy-to-backend channel.
+- The shared infrastructure secret exists only on Guardian-Velocity/Guardian-Paper and is not present in Cerberus.
+- Matching secrets produced `ALLOW / PROXY_ADMISSION_VERIFIED` before world entry.
+- Deliberately mismatched secrets caused Guardian-Paper to reject the assertion with `PROXY_ASSERTION_INVALID` before world entry.
+- Guardian-Paper in `velocity` authority mode verifies the proxy result rather than independently repeating the Cerberus/policy decision.
+
+Geyser/Floodgate classification:
+
+- A real Minecraft for Windows client was identified by supported Geyser and Floodgate APIs as `BEDROCK` at Guardian-Velocity.
+- The same connection was not classified from its Floodgate username prefix; username prefix is not an input to the Bedrock classifier.
+- Positive Bedrock classification bypassed Cerberus interrogation and was allowed under the Phase 0 test policy.
+- The authenticated proxy assertion carried `origin=BEDROCK` to Guardian-Paper.
+- Backend Floodgate independently reported the same player as Bedrock, and Guardian-Paper logged the sanity-check agreement while retaining the generic `ALLOW / PROXY_ADMISSION_VERIFIED` result.
+- A live prefix-authority regression used a configured Floodgate prefix matching the beginning of a Java username. The Java Fabric connection remained `JAVA_FABRIC`, Geyser/Floodgate both reported not-Bedrock, and the ordinary Cerberus flow still ran.
+
+Proxy-session and backend-switch semantics:
+
+- Fabric + Cerberus and Bedrock connections both switched between two Paper backends while retaining the same proxy-session ID and without a second Cerberus attestation.
+- Vanilla Java likewise reused the same admission across a backend switch.
+- After a full disconnect/reconnect, a new proxy-session ID was created. Fabric performed a fresh Cerberus challenge; vanilla received a fresh Java admission session.
+- This proves the intended boundary: cache admission only for the lifetime of one proxy connection; never persist it as a long-lived player trust record.
+
+Regression and standalone results:
+
+- Java vanilla remained allowed through Velocity.
+- Java Fabric + Cerberus remained `CERBERUS_VERIFIED`.
+- Java Fabric without Cerberus remained `CERBERUS_REQUIRED` and was denied before world entry after the configured feasibility timeout.
+- Standalone Guardian-Paper without Velocity/Geyser/Floodgate still admitted vanilla pre-world and successfully completed the Phase 0A Fabric + Cerberus hybrid CONFIGURATION/PLAY-quarantine flow.
+
+The current 10-second no-Cerberus wait is a feasibility-spike timeout, not a finalized production UX value. Production timing remains subject to later hardening/configuration work.
+
+**Exit criterion:** Satisfied. Guardian-Velocity is suitable as the preferred BadWolfMC production admission authority, with Guardian-Paper verifying trusted proxy admission on backends. Standalone Guardian-Paper remains a supported independent authority mode.
+
 ---
 
 ## Phase 1 — Foundation and BrandBlocker rewrite
@@ -1468,11 +1508,11 @@ The implementation should re-check current documentation when each phase begins 
 
 # 38. Handoff context for the next development chat
 
-**Phase 0A is complete. Phase 0B is next.**
+**Phase 0 feasibility is complete. Phase 1 is the next implementation phase.**
 
 The project should continue treating this document as the primary design authority and BrandBlocker as legacy behavior/reference rather than an implementation architecture to preserve.
 
-The standalone Paper 26.2 result is now settled:
+The standalone Paper 26.2 result is settled:
 
 - keep client classification and Cerberus presence/protocol detection in CONFIGURATION;
 - deny missing Cerberus and incompatible protocol before world entry;
@@ -1483,28 +1523,37 @@ The standalone Paper 26.2 result is now settled:
 - retain distinct `CERBERUS_TIMEOUT`, `MANIFEST_DENIED`, `MANIFEST_INVALID`, and compatibility outcomes;
 - do not use NMS, reflection, Fabric implementation internals, Mixins, or packet-library workarounds to force all-CONFIGURATION behavior.
 
-The immediate engineering question for Phase 0B is:
+The BadWolfMC Velocity-network result is also settled:
 
-> Can Guardian-Velocity perform the authoritative Cerberus handshake cleanly during Velocity's supported CONFIGURATION lifecycle, securely convey the resulting admission to Guardian-Paper, and integrate Geyser/Floodgate classification without losing the standalone Paper hybrid?
+- Guardian-Velocity is the preferred network admission authority;
+- perform Fabric/Cerberus admission during Velocity CONFIGURATION;
+- classify Bedrock first through supported Geyser/Floodgate APIs and never through username-prefix trust;
+- positively identified Bedrock receives no Cerberus challenge;
+- Guardian-Velocity sends short-lived authenticated admission state to Guardian-Paper;
+- Guardian-Paper verifies that state and MUST NOT independently reevaluate the same connection's policy;
+- backend Floodgate may sanity-check Bedrock origin as defense in depth without becoming a second authority;
+- reuse admission only within the same proxy connection across backend switches;
+- a new proxy connection creates a fresh admission session and fresh Cerberus challenge when applicable;
+- standalone Guardian-Paper remains supported without Velocity, Geyser, or Floodgate.
 
-Phase 0B must not assume that Velocity has the same registration limitation as Paper; it must test the proxy path independently.
+Phase 1 should now replace the feasibility-oriented foundation with the production Guardian foundation described in this contract while preserving every proven authority and lifecycle boundary above.
 
-Do **not** begin the full production policy engine, LuckPerms profile system, artifact hashing, signed Cerberus release identity, or production command/UX surfaces during Phase 0B unless minimally necessary for the feasibility experiment.
+Do not accidentally promote Phase 0 spike details into permanent production configuration merely because they were sufficient for feasibility. In particular, exact assertion format/version, shared-secret provisioning UX, timeout defaults, logging verbosity, and disagreement policy still require deliberate production design in their appropriate phases.
 
-The signed-JAR/hash concept identified during Phase 0A research is intentionally parked for Phase 6 as optional compliance hardening, with the explicit limitation that it is signed release-artifact identity rather than hostile-client remote attestation.
-
-Only after Phase 0B should implementation proceed through the broader production phases in this contract.
+The signed-JAR/hash concept identified during Phase 0A research remains intentionally parked for Phase 6 as optional compliance hardening, with the explicit limitation that it is signed release-artifact identity rather than hostile-client remote attestation.
 
 ---
 
 ## 39. Current overall assessment
 
-Phase 0A succeeded in its purpose.
+Phase 0 succeeded in its purpose.
 
-The original stronger all-CONFIGURATION standalone assumption was tested rather than preserved by force: Fabric → Paper CONFIGURATION payload delivery works, but the tested supported Paper 26.2/Fabric 26.2 high-level APIs do not provide the clean reverse channel-registration path required for Paper → Fabric challenge delivery.
+The original stronger all-CONFIGURATION standalone assumption was tested rather than preserved by force: Fabric → Paper CONFIGURATION payload delivery works, but the tested supported Paper 26.2/Fabric 26.2 high-level APIs do not provide the clean reverse channel-registration path required for Paper → Fabric challenge delivery. The selected standalone hybrid is proven in live testing and preserves the most valuable pre-world behavior while remaining entirely on supported APIs.
 
-The selected standalone hybrid is proven in live testing and preserves the most valuable pre-world behavior while remaining entirely on supported APIs.
+The Velocity path is also proven end to end. Guardian-Velocity can hold and resolve Fabric/Cerberus admission during CONFIGURATION, consume the security-sensitive client channels, classify Bedrock through supported Geyser/Floodgate APIs, and send a short-lived authenticated admission assertion to Guardian-Paper in time for its final pre-world gate. Guardian-Paper verifies that trusted result without becoming a duplicate policy authority.
 
-The Velocity CONFIGURATION transport and client-channel isolation are now live-proven. The next major technical uncertainty is narrower: whether a short-lived, infrastructure-authenticated Velocity admission assertion can reach Guardian-Paper in time for its final pre-world gate, remain unforgeable by a normal client, and then be reused cleanly across backend switches. Geyser/Floodgate classification remains to be proven after that trust path.
+Backend switching was live-tested with Fabric, vanilla, and Bedrock. Admission is reused within one proxy connection, while a full reconnect creates a new admission session and a fresh Cerberus challenge when applicable. Standalone Guardian-Paper was re-tested without Velocity/Geyser/Floodgate and remains functional.
 
-The project should continue Phase 0B while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.
+For BadWolfMC's production topology, Guardian-Velocity is therefore the preferred admission authority and Guardian-Paper is the trusted backend verifier. For non-Velocity deployments, Guardian-Paper remains a supported standalone authority using the Phase 0A hybrid.
+
+The project can proceed to Phase 1 while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.
