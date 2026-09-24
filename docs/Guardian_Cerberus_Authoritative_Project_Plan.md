@@ -2,10 +2,10 @@
 ## Authoritative Project Plan and Implementation Contract
 
 **Project:** BadWolfMC Guardian / Cerberus
-**Document status:** Living implementation contract; Phase 0A complete
+**Document status:** Living implementation contract; Phase 0 complete; Phase 1 architecture revised for Guardian Protection
 **Initial target:** Minecraft / Paper 26.2, Java 25
 **Future target:** 26.3 after Paper 26.3 reaches a stable API
-**Date:** 2026-09-22
+**Date:** 2026-09-24
 
 ---
 
@@ -25,15 +25,22 @@ This is a **broad project contract**, not a frozen wire-protocol specification. 
 
 ## 2. Project summary
 
-Guardian is a server-side client-policy enforcement system intended to replace and substantially expand BadWolfMC's existing BrandBlocker plugin.
+Guardian is a server-side policy and protection ecosystem intended to replace BadWolfMC's existing BrandBlocker plugin and selected still-useful server-protection functionality from BadWolfMC's eZProtector fork.
 
-Cerberus is Guardian's companion client-side Fabric mod.
+Guardian has two independent domains:
 
-The central problem is that a Paper server can usually identify a client's self-reported brand but cannot directly inspect a Fabric client's installed mods. Cerberus will use Fabric Loader's public API to enumerate the client's loaded mods and report a constrained manifest to Guardian when Guardian policy requires attestation.
+- **Admission** — client classification, Cerberus attestation, client/mod policy, Bedrock classification, and trusted Velocity → Paper admission;
+- **Protection** — Paper-side command execution policy, command/argument visibility policy, namespaced-command policy, and associated feedback/notifications.
 
-Guardian will then evaluate that manifest against the player's configured policy and either admit or deny the connection.
+Cerberus is Guardian Admission's companion client-side Fabric mod.
 
-The project is designed to preserve the practical purpose of BrandBlocker: stopping accidental, inattentive, or low-effort rule violations. It is **not** intended to provide hardware-backed remote attestation or to defeat a determined attacker who modifies their client specifically to lie to Guardian.
+The central Admission problem is that a Paper server can usually identify a client's self-reported brand but cannot directly inspect a Fabric client's installed mods. Cerberus will use Fabric Loader's public API to enumerate the client's loaded mods and report a constrained manifest to Guardian when Guardian policy requires attestation.
+
+Guardian Admission will evaluate that manifest against the player's configured policy and either admit or deny the connection.
+
+Guardian Protection will provide a modern successor to the selected command-control and command-disclosure behavior BadWolfMC still uses from eZProtector. Protection MUST remain logically and operationally independent from Admission: ordinary Paper-side protection MUST NOT require Cerberus, Guardian-Velocity, Geyser, Floodgate, or a trusted proxy admission.
+
+The Admission design preserves the practical purpose of BrandBlocker: stopping accidental, inattentive, or low-effort client-policy violations. It is **not** intended to provide hardware-backed remote attestation or to defeat a determined attacker who modifies their client specifically to lie to Guardian.
 
 ---
 
@@ -56,6 +63,13 @@ Guardian/Cerberus MUST:
 13. Be open-source and preserve appropriate BrandBlocker attribution/license obligations.
 14. Be maintainable across Minecraft/Paper/Fabric updates.
 15. Minimize collection and retention of client information.
+16. Provide an independent Guardian Protection domain for selected modern eZProtector successor functionality.
+17. Keep Admission and Protection independently enableable and independently testable.
+18. Support explicit allowlist and denylist modes for command visibility and namespaced-command policy.
+19. Keep all player/staff-facing message and feedback strings in translatable locale resources rather than Java source.
+20. Use Adventure components and MiniMessage for Guardian-controlled player/staff-facing text, with safe typed internal placeholders.
+21. Use versioned, validated configuration files that never overwrite or regenerate an existing administrator file merely because it is malformed.
+22. Use new `guardian.*` permission nodes and provide an explicit eZProtector → Guardian permission migration guide rather than retaining legacy permission aliases.
 
 ---
 
@@ -69,7 +83,11 @@ Guardian/Cerberus MUST NOT be represented as:
 - hardware-backed remote attestation;
 - a guarantee that an adversarial client cannot spoof a Java client brand;
 - a replacement for ordinary server/network security;
-- a replacement for a firewall around Velocity backend servers.
+- a replacement for a firewall around Velocity backend servers;
+- a general-purpose "everything security-ish" grab bag;
+- a revival of eZProtector's historical client-specific plugin-message countermeasures;
+- a claim that hiding a command from the client is equivalent to securely preventing its execution;
+- a permanent eZProtector configuration or permission compatibility layer.
 
 A determined user who patches Cerberus, Fabric Loader, the Minecraft client, or the networking path can potentially falsify what the server sees.
 
@@ -104,6 +122,37 @@ Guardian SHOULD NOT preserve the following legacy implementation patterns:
 
 The Guardian README MUST retain appropriate attribution to the original BrandBlocker project and author.
 
+### 5.1 eZProtector lineage and selected successor scope
+
+BadWolfMC also maintains a GPLv3 fork of eZProtector. According to the BadWolfMC project history, that fork has not incorporated code from later upstream continuations since the original project was abandoned around 2021.
+
+Guardian MUST treat the supplied BadWolfMC GPLv3 eZProtector fork as the only source lineage for any eZProtector-derived implementation work unless licensing is intentionally revisited.
+
+Guardian Protection SHOULD replace only the still-useful server-protection concepts:
+
+- configurable command execution restrictions;
+- command visibility/root-command filtering;
+- argument suggestion suppression associated with hidden command roots;
+- namespaced-command policy;
+- bypass policy;
+- permission-gated staff notifications;
+- structured protection decisions/actions.
+
+Guardian MUST NOT port or preserve eZProtector's historical:
+
+- Fabric/Forge/LiteLoader/Rift brand-based mod blocking;
+- 5zig/BetterSprinting/Schematica/WorldDownloader/BetterPvP/VoxelMap countermeasures;
+- fake `/plugins` output;
+- fake `/version` output;
+- raw config reload implementation;
+- legacy Waterfall/Velocity implementation techniques.
+
+Those client/mod features are superseded by Guardian Admission where a modern equivalent is appropriate; otherwise they are retired.
+
+Guardian SHOULD provide a migration guide from eZProtector configuration concepts and permission nodes to Guardian Protection. Guardian MUST NOT require permanent support for the old eZProtector YAML schema or `ezprotector.*` permission nodes.
+
+The Guardian README SHOULD contain an Acknowledgements/Provenance section covering both BrandBlocker and eZProtector lineage.
+
 ---
 
 ## 6. Repository and module architecture
@@ -116,6 +165,7 @@ Recommended structure:
 Guardian/
 ├── guardian-core/
 ├── guardian-protocol/
+├── guardian-protection/
 ├── guardian-paper/
 ├── guardian-velocity/
 ├── cerberus-fabric/
@@ -124,16 +174,20 @@ Guardian/
 
 ### 6.1 guardian-core
 
-`guardian-core` MUST contain platform-neutral domain logic, including:
+`guardian-core` is the platform-neutral **Admission** domain.
+
+It MUST contain Admission logic, including:
 
 - client classifications;
-- policy models;
-- policy resolution results;
+- Admission policy models;
+- Admission policy resolution results;
 - manifest models;
 - manifest evaluation;
-- denial/allow reason models;
-- validation rules;
-- common configuration-domain objects.
+- Admission denial/allow reason models;
+- Admission validation rules;
+- Admission configuration-domain objects.
+
+It MUST NOT become a generic dumping ground for Protection behavior merely because both domains ship in the same plugin.
 
 It MUST NOT depend on Paper, Bukkit, Velocity, Fabric, Minecraft implementation classes, Geyser, or Floodgate.
 
@@ -152,19 +206,48 @@ It MUST NOT depend on Paper, Bukkit, Velocity, Fabric, Minecraft implementation 
 
 It SHOULD have no Paper, Velocity, Fabric, Bukkit, or Minecraft dependency.
 
-### 6.3 guardian-paper
+### 6.3 guardian-protection
 
-`guardian-paper` is the standalone-capable Paper adapter.
+`guardian-protection` is the platform-neutral **Protection** domain.
 
-It MUST be capable of acting as the authoritative Guardian enforcement point when no Guardian-Velocity instance is providing a trusted admission result.
+It SHOULD model concepts such as:
 
-### 6.4 guardian-velocity
+- command execution rules;
+- command visibility rules;
+- namespaced-command rules;
+- bypass decisions;
+- protection outcomes/reasons;
+- notification/action requests.
+
+It MUST NOT depend on Paper/Bukkit event classes and MUST NOT depend on `guardian-core` merely to gain access to Admission behavior.
+
+It is an internal library module and is not an administrator-installed JAR.
+
+### 6.4 guardian-paper
+
+`guardian-paper` is the standalone-capable Paper adapter and the runtime host for both Guardian domains.
+
+It MUST be capable of acting as the authoritative Admission enforcement point when no Guardian-Velocity instance is providing a trusted admission result.
+
+It MUST also adapt Guardian Protection to supported Paper command/Brigadier APIs.
+
+Admission and Protection MUST be independently enableable. `guardian-paper` MUST be capable of loading with:
+
+- Admission enabled and Protection disabled;
+- Protection enabled and Admission disabled;
+- both enabled.
+
+Paper-specific configuration loading, locale/message rendering, lifecycle integration, and command-tree refresh behavior MAY be shared by the two adapters inside `guardian-paper`, but the domain modules MUST remain independent.
+
+### 6.5 guardian-velocity
 
 `guardian-velocity` is an optional Velocity adapter.
 
 When configured as authoritative, it SHOULD perform initial classification, Cerberus attestation, and policy evaluation once per proxy connection before the player is admitted to a backend.
 
-### 6.5 cerberus-fabric
+Guardian-Velocity remains Admission-focused for the initial product. Proxy-side Protection MAY be added later only if a concrete network-global or proxy-owned-command requirement justifies it.
+
+### 6.6 cerberus-fabric
 
 `cerberus-fabric` is the client-side Fabric mod.
 
@@ -356,7 +439,9 @@ Policy evaluation MUST be deterministic and independently testable in `guardian-
 
 ---
 
-## 11. Profile and permission resolution
+## 11. Identity, permission, and Protection policy resolution
+
+### 11.1 Admission profile resolution
 
 Pre-world enforcement occurs before a normal Bukkit `Player` permission context necessarily exists.
 
@@ -379,6 +464,57 @@ If no pre-login-capable provider is installed:
 - administrative emergency overrides SHOULD use a mechanism that is valid before login, such as explicit UUID configuration.
 
 The exact generic profile-provider SPI MAY be defined during implementation.
+
+### 11.2 Guardian Protection policy model
+
+Guardian Protection SHOULD use platform-neutral policy objects rather than placing rule semantics directly in Paper listeners.
+
+The initial Protection feature set SHOULD include:
+
+1. **Command execution policy**
+   - deny configured command roots belonging to Guardian or third-party plugins where appropriate;
+   - execution denial is an enforcement/security boundary;
+   - Guardian-owned commands SHOULD use their native Paper command permissions first rather than relying on interception.
+
+2. **Command visibility policy**
+   - control which command roots are advertised to the client;
+   - support explicit `ALLOWLIST` and `DENYLIST` modes;
+   - visibility is an information-disclosure/UX control and MUST NOT be represented as sufficient execution security.
+
+3. **Argument suggestion policy**
+   - if a command root is hidden by the active visibility policy, downstream argument suggestions for that root MUST also be suppressed;
+   - a player who guesses a hidden root MUST NOT gain its argument suggestions merely by typing it;
+   - Phase 1B MAY remain root-command scoped; arbitrary deep subcommand filtering is not required unless implementation evidence justifies it.
+
+4. **Namespaced-command policy**
+   - govern direct invocation of roots such as `plugin:command`;
+   - support explicit `ALLOWLIST` and `DENYLIST` modes;
+   - allowlist mode MUST permit explicitly required namespaced aliases for legitimate plugin-command conflicts.
+
+All rule matching MUST normalize command roots deterministically and case-insensitively. Slash/no-slash representation MUST NOT change the decision.
+
+### 11.3 Protection bypass and notification semantics
+
+Protection bypass decisions MUST be centralized rather than duplicated independently across root-command filtering, argument-suggestion filtering, and execution listeners.
+
+The permission model SHOULD provide, at minimum, the concepts of:
+
+- global Protection bypass;
+- execution-policy bypass;
+- namespaced-command-policy bypass;
+- visibility/suggestion-policy bypass;
+- optional per-command visibility/suggestion bypass.
+
+The exact new `guardian.protection.*` node names are finalized in Phase 1B, but Guardian MUST NOT retain `ezprotector.*` aliases in the initial implementation.
+
+A visibility/suggestion bypass MUST apply consistently to both:
+
+- whether the root is present in the command tree;
+- whether argument suggestions for that root are suppressed.
+
+Notification permissions MUST be independent from bypass permissions. Permission to observe a Protection violation MUST NOT imply exemption from the rule, and exemption MUST NOT automatically grant notification visibility.
+
+When Guardian itself changes an active visibility configuration for online players, the Paper adapter MUST refresh affected client command trees using a supported API. Permission-change refresh behavior SHOULD use supported platform/provider mechanisms where available; stale client visibility MUST never be treated as the execution security boundary.
 
 ---
 
@@ -828,6 +964,39 @@ Startup behavior for a completely invalid initial configuration MUST be explicit
 
 It MUST NOT silently fall back to permissive behavior without an explicit documented policy.
 
+### 24.4.1 Configuration file safety and schema versioning
+
+Administrator-owned Guardian configuration files MUST be versioned from their first production implementation.
+
+A simple integer schema/version field is sufficient initially. The initial schema MAY remain at version `1` until a real migration is needed; there is no requirement to invent version churn before release.
+
+The parser MUST distinguish at least:
+
+- file missing;
+- valid supported schema;
+- malformed YAML/syntax;
+- structurally invalid values;
+- unsupported newer schema;
+- older schema requiring a defined migration.
+
+A missing file MAY cause Guardian to create documented defaults.
+
+An **existing malformed or invalid file MUST NOT be silently overwritten, reset, regenerated, or replaced with defaults** merely because parsing failed.
+
+Reload MUST:
+
+1. read the administrator-owned files without modifying them;
+2. parse;
+3. validate;
+4. construct immutable candidate snapshots;
+5. activate all relevant candidate snapshots atomically only after successful validation.
+
+If reload fails, the prior known-good runtime snapshot MUST remain active.
+
+Configuration and locale files SHOULD report actionable diagnostics including the file and key/path involved and, where the YAML parser exposes it, line/column information.
+
+Automatic schema migration MAY be added when a real migration exists. Until then, unsupported schema versions should fail validation clearly rather than guessing.
+
 ### 24.5 Dependency/integration loss
 
 If an optional integration such as LuckPerms, Geyser, or Floodgate disappears or becomes unavailable, Guardian MUST have deterministic behavior and a clear diagnostic.
@@ -902,13 +1071,13 @@ A database is not required for the core product unless later operational require
 
 ---
 
-## 28. Player-facing messages
+## 28. Player/staff-facing messages and localization
 
 All denial states SHOULD have distinct, useful messages.
 
 Messages SHOULD include enough information to remediate ordinary mistakes without exposing unnecessary security internals.
 
-Representative categories:
+Representative Admission categories:
 
 - unsupported client;
 - Fabric requires Cerberus;
@@ -921,11 +1090,61 @@ Representative categories:
 - Bedrock denied by policy;
 - internal/configuration issue.
 
-The project SHOULD use Adventure components where supported.
+Representative Protection categories:
+
+- command execution denied;
+- namespaced command denied;
+- command hidden/suggestion suppressed where feedback is appropriate;
+- staff notification of a Protection violation;
+- configuration/permission diagnostic feedback from Guardian commands.
+
+### 28.1 Locale resources
+
+All **player-visible and staff-facing Guardian feedback strings** MUST come from translatable locale resources and MUST NOT be embedded as literal message text in Java source.
+
+This includes:
+
+- disconnect/deny reasons controlled by Guardian;
+- Protection denial feedback;
+- Protection staff notifications;
+- `/guardian` command feedback;
+- user-facing validation/reload/status feedback where applicable.
+
+Purely internal technical logger diagnostics are not required to be player-localized, but SHOULD remain structured and administrator-readable.
+
+The project SHOULD ship a complete default locale (initially English) and a deterministic fallback chain. A missing key in a selected locale MAY fall back to the configured/default locale; a key missing from the required default locale SHOULD be caught by validation/tests rather than replaced by a hard-coded Java fallback sentence.
+
+Exact file names and per-player locale selection semantics remain Phase 1 implementation details.
+
+### 28.2 Adventure, MiniMessage, and placeholders
+
+Guardian-controlled rich text MUST use Adventure components and SHOULD use MiniMessage templates in locale resources.
+
+Internal dynamic values SHOULD be provided through typed/safe placeholder resolvers rather than ad-hoc string replacement.
+
+Initial internal placeholder concepts SHOULD include, where relevant:
+
+- player name;
+- command;
+- normalized command root;
+- rule ID;
+- structured reason;
+- client classification;
+- mod ID/version;
+- server name/deployment mode;
+- configured help/download URL.
+
+Untrusted/player-controlled placeholder values MUST be inserted as literal/unparsed content by default so that a player name, command text, or mod metadata cannot inject MiniMessage formatting.
+
+PlaceholderAPI MUST NOT be required for Guardian Protection or Admission. Optional PlaceholderAPI expansion in ordinary rendered messages MAY be considered later as a convenience integration.
+
+### 28.3 Direct supported actions
 
 A configurable help/download URL SHOULD be supported.
 
 The project SHOULD NOT rely on console `kick` commands when a direct supported disconnect/deny API exists.
+
+Protection notifications SHOULD be permission-gated ordinary Adventure chat messages by default. A structured action model MAY later support additional integrations, but arbitrary punishment commands are not required for BadWolfMC's Phase 1B migration.
 
 ---
 
@@ -952,11 +1171,15 @@ Useful diagnostics SHOULD include:
 - resolved profile;
 - attestation status;
 - decision/reason;
-- proxy assertion status where relevant.
+- proxy assertion status where relevant;
+- Protection enabled/disabled state;
+- active Protection snapshot/version;
+- matched Protection rule/reason where relevant;
+- effective bypass/notification decision when diagnosing an online player.
 
 `reload` MUST be atomic and preserve the prior configuration if validation fails.
 
-`validate` SHOULD validate files without changing active runtime state.
+`validate` SHOULD validate configuration and locale files without changing active runtime state.
 
 ---
 
@@ -974,6 +1197,8 @@ If implemented, it SHOULD expose stable domain concepts such as:
 
 Other plugins SHOULD NOT be given mutable access to internal admission state.
 
+If Protection state is later exposed publicly, it SHOULD likewise use read-only domain concepts such as the matched rule/reason and effective outcome rather than mutable listener internals.
+
 This API is not required for Phase 0 or the first minimal production implementation.
 
 ---
@@ -988,7 +1213,7 @@ guardian-velocity-<version>.jar
 cerberus-fabric-<version>.jar
 ```
 
-Shared core/protocol modules SHOULD normally be implementation dependencies rather than separate administrator-installed artifacts.
+Shared core/protocol/protection modules SHOULD normally be implementation dependencies rather than separate administrator-installed artifacts.
 
 CI SHOULD include:
 
@@ -996,7 +1221,9 @@ CI SHOULD include:
 - unit tests;
 - protocol tests;
 - policy tests;
-- configuration validation tests;
+- configuration and locale validation tests;
+- Protection policy/bypass tests;
+- guard tests preventing hard-coded player/staff-facing message fallbacks where practical;
 - platform boundary tests where practical;
 - reproducible artifact naming;
 - checksums for release artifacts.
@@ -1005,13 +1232,21 @@ Release documentation MUST clearly identify which JAR belongs on Paper, Velocity
 
 ---
 
-## 32. Licensing and attribution
+## 32. Licensing, attribution, and provenance
 
-Guardian should remain compatible with BrandBlocker's GPLv3 lineage.
+Guardian should remain compatible with BrandBlocker's GPLv3 lineage and BadWolfMC's GPLv3 eZProtector lineage.
 
 The project SHOULD retain GPLv3 for Guardian unless legal review later establishes and justifies another compatible arrangement.
 
-The README SHOULD acknowledge that Guardian began as a hard fork and substantial rewrite of BrandBlocker by Menacho and link to the original project.
+The README SHOULD maintain an Acknowledgements/Provenance section that:
+
+- states that Guardian began as a hard fork and substantial rewrite of BrandBlocker by Menacho and links to the original project;
+- acknowledges eZProtector by DoNotSpamPls and the BadWolfMC fork/contributors for selected Guardian Protection concepts/source where applicable;
+- clearly distinguishes current BadWolfMC Guardian development from both legacy projects.
+
+Any eZProtector code incorporated into Guardian MUST come from the identified BadWolfMC GPLv3 lineage unless licensing is intentionally reconsidered first. Later AGPL-licensed continuation code MUST NOT be casually copied into Guardian.
+
+Before source transplantation begins, the project SHOULD record the exact BadWolfMC eZProtector commit used as the provenance boundary when that commit information is available.
 
 Cerberus and shared modules SHOULD use a licensing arrangement compatible with the combined repository and distribution model.
 
@@ -1186,28 +1421,72 @@ The current 10-second no-Cerberus wait is a feasibility-spike timeout, not a fin
 
 ---
 
-## Phase 1 — Foundation and BrandBlocker rewrite
+## Phase 1 — Guardian foundation, BrandBlocker rewrite, and Protection foundation
 
-**Goal:** Replace the BrandBlocker architecture with Guardian's platform-neutral core and modern Paper adapter.
+Phase 1 is divided into two implementation slices so Guardian's two domains are established cleanly before later policy complexity is added.
 
-Implement:
+### Phase 1A — Guardian foundation and BrandBlocker rewrite
+
+**Goal:** Replace the BrandBlocker architecture with Guardian's production Admission foundation while establishing the shared Paper runtime/lifecycle needed by independent Admission and Protection domains.
+
+Implement/refine:
 
 - Gradle multi-project structure;
 - `com.badwolfmc.guardian` package namespace;
-- `guardian-core`;
+- `guardian-core` as the platform-neutral Admission domain;
 - `guardian-protocol`;
-- `guardian-paper`;
-- structured decision model;
+- new `guardian-protection` platform-neutral domain module;
+- `guardian-paper` as the runtime host/adaptor for independently enableable Admission and Protection;
+- structured Admission decision model;
 - Java client brand classification;
 - modern direct disconnect handling;
-- default policy infrastructure;
-- config parse/validate/snapshot lifecycle;
+- default Admission policy infrastructure;
+- versioned config parse/validate/immutable-snapshot lifecycle;
+- malformed-file preservation: never regenerate/overwrite an existing bad YAML file;
+- atomic reload preserving prior known-good snapshots;
+- locale catalog loading/validation;
+- Adventure/MiniMessage rendering with safe internal placeholder resolution;
 - logs and diagnostics;
-- attribution/license updates.
+- attribution/provenance updates for both BrandBlocker and eZProtector.
 
 Carry forward the practical ability to allow/deny non-Fabric client brands.
 
-Do not yet implement the full Fabric policy engine unless needed for the prototype integration.
+Phase 1A MUST preserve the invariant that Guardian-Paper can load with Admission only, Protection only, or both enabled.
+
+Do not yet implement the full Fabric policy engine unless needed for the existing prototype integration.
+
+### Phase 1B — Guardian Protection / eZProtector successor
+
+**Goal:** Replace the selected still-useful eZProtector server-protection behavior with a clean Guardian Protection implementation built against supported Paper 26.2 APIs.
+
+Implement:
+
+- platform-neutral `ProtectionDecision`/reason/rule models;
+- command execution policy for configured command roots;
+- command visibility policy with explicit allowlist/denylist modes;
+- namespaced-command policy with explicit allowlist/denylist modes;
+- root-command normalization;
+- root-command visibility filtering through supported command-tree APIs/events;
+- downstream argument-suggestion suppression whenever the root is hidden;
+- centralized bypass resolution shared by root visibility, argument suggestions, namespaced-command enforcement, and command execution as applicable;
+- global/feature-scoped bypass concepts and optional per-command visibility bypass;
+- permission-gated staff notifications independent from bypass permissions;
+- locale-backed player denial feedback and staff notifications;
+- command-tree refresh after Guardian visibility configuration changes for online players using supported Paper APIs;
+- tests covering whitelist/allowlist and blacklist/denylist modes, guessed hidden roots, argument suggestions, bypasses, permission/config refresh, and rule normalization;
+- a documented eZProtector → Guardian configuration concept mapping;
+- a documented eZProtector → Guardian permission migration table using only new `guardian.*` nodes.
+
+Do not carry forward:
+
+- eZProtector client-brand/mod enforcement;
+- 5zig/BetterSprinting/Schematica/WorldDownloader/BetterPvP/VoxelMap countermeasures;
+- fake plugin-list/version responses;
+- legacy Waterfall/Velocity techniques;
+- legacy `ezprotector.*` permission aliases;
+- eZProtector's raw config reload behavior.
+
+BadWolfMC does not require punishment commands for the initial Protection migration. A generic structured action/integration mechanism MAY later support direct disconnects or configured console commands where justified, but Phase 1B's required operational behavior is denial feedback, staff notification, and logging.
 
 ---
 
@@ -1354,6 +1633,10 @@ Implement/refine:
 - Velocity network guide;
 - Geyser/Floodgate guide;
 - LuckPerms/profile guide;
+- Guardian Protection guide;
+- eZProtector → Guardian configuration migration guide;
+- eZProtector → Guardian permission migration table;
+- locale/message customization guide;
 - security/threat-model documentation;
 - release checksums;
 - clean-install tests;
@@ -1406,6 +1689,22 @@ Before first public production release, testing SHOULD cover at minimum:
 | Backend direct-connect path | Rejected by network/security posture |
 | Invalid config reload | Prior config remains active |
 | Optional integration missing | Deterministic documented behavior |
+| Protection disabled, Admission enabled | Admission remains functional |
+| Admission disabled, Protection enabled | Paper Protection remains functional without Velocity/Cerberus/Geyser/Floodgate |
+| Visibility allowlist mode | Only listed/permitted roots exposed, subject to bypass |
+| Visibility denylist mode | Listed roots hidden, subject to bypass |
+| Namespaced allowlist mode | Unlisted namespaced roots denied; configured aliases allowed |
+| Namespaced denylist mode | Listed namespaced roots denied; others unaffected |
+| Hidden root guessed manually | No downstream argument suggestions exposed |
+| Global visibility bypass | Root and argument suggestions both bypass filtering |
+| Per-command visibility bypass | Applies consistently to root and arguments for that command |
+| Protection config reload invalid | Prior Protection snapshot remains active; file untouched |
+| Malformed existing YAML | File is not regenerated/overwritten |
+| Guardian visibility config changes | Online command trees are refreshed through supported API |
+| Notification permission without bypass | Receives configured notices but remains subject to rules |
+| Bypass without notification permission | Bypasses applicable rule without gaining notices |
+| Missing required locale key | Validation/test failure or defined locale fallback; no hard-coded message fallback |
+| Legacy `ezprotector.*` permission only | No implicit Guardian bypass/notification authority |
 
 ---
 
@@ -1428,6 +1727,17 @@ The following are hard project invariants unless explicitly revised:
 13. **No automatic assumption that CONFIGURATION-stage Paper↔Fabric messaging works until Phase 0A proves it.**
 14. **No speculative 26.3-alpha compatibility burden in the initial 26.2 implementation.**
 15. **No loss of standalone Paper capability merely because Velocity becomes the preferred production deployment.**
+16. **Admission and Protection are independent domains; neither may require the other to be enabled.**
+17. **Guardian Protection must operate on standalone Paper without Guardian-Velocity, Cerberus, Geyser, Floodgate, or trusted proxy admission.**
+18. **Command execution policy is an enforcement boundary; command visibility/suggestion filtering is not a substitute for execution permissions/enforcement.**
+19. **A hidden command root must not leak downstream argument suggestions merely because the player guesses the root.**
+20. **Protection bypass semantics must be centralized and consistent across root visibility and argument-suggestion filtering.**
+21. **Notification authority and bypass authority are independent.**
+22. **No legacy eZProtector client/mod countermeasure is ported into Guardian Protection.**
+23. **No legacy `ezprotector.*` permission alias is required by Guardian; migration is documentation-driven.**
+24. **No player/staff-facing Guardian feedback string is hard-coded in Java source; locale resources are authoritative.**
+25. **No existing malformed/invalid administrator config or locale file is silently regenerated or overwritten.**
+26. **Any eZProtector-derived source must come from the identified BadWolfMC GPLv3 lineage unless licensing is deliberately revisited.**
 
 ---
 
@@ -1449,7 +1759,13 @@ The following should remain open until the indicated implementation phase rather
 - exact artifact hashing rules for directory/development origins;
 - whether signed official Cerberus release identity is adopted;
 - if adopted, its canonical digest/signature algorithm, metadata format, and release-key lifecycle;
-- exact configuration file split/names;
+- exact configuration/locale file split and names;
+- exact new `guardian.protection.*` permission node spelling/hierarchy beyond the required semantics;
+- exact Protection rule YAML syntax;
+- exact locale selection strategy beyond required default/fallback behavior;
+- whether optional PlaceholderAPI expansion is added to ordinary rendered messages;
+- whether a generic console-command Protection action ships in the initial public release;
+- whether Guardian-Velocity ever gains network-global/proxy-owned command Protection;
 - exact admin command syntax;
 - exact behavior when the initial configuration is invalid at process startup;
 - whether a public read-only Guardian API ships in v1.0;
@@ -1471,6 +1787,21 @@ The implementation should re-check current documentation when each phase begins 
   https://jd.papermc.io/paper/26.2/io/papermc/paper/event/connection/PlayerConnectionValidateLoginEvent.html
 - Paper plugin messaging
   https://docs.papermc.io/paper/dev/plugin-messaging/
+- Paper 26.2 `PlayerCommandPreprocessEvent`
+  https://jd.papermc.io/paper/26.2/org/bukkit/event/player/PlayerCommandPreprocessEvent.html
+- Paper 26.2 `PlayerCommandSendEvent`
+  https://jd.papermc.io/paper/26.2/org/bukkit/event/player/PlayerCommandSendEvent.html
+- Paper 26.2 `AsyncPlayerSendCommandsEvent`
+  https://jd.papermc.io/paper/26.2/com/destroystokyo/paper/event/brigadier/AsyncPlayerSendCommandsEvent.html
+- Paper 26.2 `AsyncPlayerSendSuggestionsEvent`
+  https://jd.papermc.io/paper/26.2/com/destroystokyo/paper/event/brigadier/AsyncPlayerSendSuggestionsEvent.html
+- Paper 26.2 `Player#updateCommands()`
+  https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html
+
+### Adventure / MiniMessage
+
+- Adventure MiniMessage documentation
+  https://docs.papermc.io/adventure/minimessage/
 
 ### Velocity
 
@@ -1508,9 +1839,9 @@ The implementation should re-check current documentation when each phase begins 
 
 # 38. Handoff context for the next development chat
 
-**Phase 0 feasibility is complete. Phase 1 is the next implementation phase.**
+**Phase 0 feasibility is complete. Phase 1A is the next implementation slice, followed by Phase 1B Guardian Protection.**
 
-The project should continue treating this document as the primary design authority and BrandBlocker as legacy behavior/reference rather than an implementation architecture to preserve.
+The project should continue treating this document as the primary design authority. BrandBlocker and the BadWolfMC GPLv3 eZProtector fork are legacy behavior/provenance references, not implementation architectures to preserve.
 
 The standalone Paper 26.2 result is settled:
 
@@ -1536,7 +1867,11 @@ The BadWolfMC Velocity-network result is also settled:
 - a new proxy connection creates a fresh admission session and fresh Cerberus challenge when applicable;
 - standalone Guardian-Paper remains supported without Velocity, Geyser, or Floodgate.
 
-Phase 1 should now replace the feasibility-oriented foundation with the production Guardian foundation described in this contract while preserving every proven authority and lifecycle boundary above.
+Phase 1A should now replace the feasibility-oriented foundation with the production Guardian Admission foundation, add the independent `guardian-protection` domain boundary, and establish the versioned configuration/localization lifecycle described in this contract while preserving every proven authority and lifecycle boundary above.
+
+Phase 1B should then replace only the approved eZProtector command-protection behavior: execution rules, command visibility/suggestion policy, namespaced-command policy, sane centralized bypass semantics, and permission-gated notifications. It must not revive eZProtector's legacy client/mod countermeasures, fake information responses, or permission namespace.
+
+The current eZProtector tab-completion implementation checks a nominal global bypass in both its root-tree and legacy argument-completion paths, yet BadWolfMC has observed bypass behavior that is not reliable in practice. Guardian MUST therefore test the complete end-to-end client command-tree/suggestion behavior rather than considering a permission check in one listener sufficient. In particular, root visibility and downstream argument suggestions must share one Protection decision, and Guardian-owned visibility changes must refresh online client command trees through supported Paper APIs.
 
 Do not accidentally promote Phase 0 spike details into permanent production configuration merely because they were sufficient for feasibility. In particular, exact assertion format/version, shared-secret provisioning UX, timeout defaults, logging verbosity, and disagreement policy still require deliberate production design in their appropriate phases.
 
@@ -1556,4 +1891,6 @@ Backend switching was live-tested with Fabric, vanilla, and Bedrock. Admission i
 
 For BadWolfMC's production topology, Guardian-Velocity is therefore the preferred admission authority and Guardian-Paper is the trusted backend verifier. For non-Velocity deployments, Guardian-Paper remains a supported standalone authority using the Phase 0A hybrid.
 
-The project can proceed to Phase 1 while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.
+The project can proceed to Phase 1A while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.
+
+Guardian's scope is now intentionally broader than the BrandBlocker replacement originally envisioned, but it remains bounded: Admission and Protection are separate domains under one ecosystem rather than a single undifferentiated security subsystem. The selected eZProtector successor scope is command execution/disclosure protection only; historical client-mod tricks and fabricated information responses are retired.
