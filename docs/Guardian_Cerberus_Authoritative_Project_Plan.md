@@ -70,6 +70,9 @@ Guardian/Cerberus MUST:
 20. Use Adventure components and MiniMessage for Guardian-controlled player/staff-facing text, with safe typed internal placeholders.
 21. Use versioned, validated configuration files that never overwrite or regenerate an existing administrator file merely because it is malformed.
 22. Use new `guardian.*` permission nodes and provide an explicit eZProtector → Guardian permission migration guide rather than retaining legacy permission aliases.
+23. Keep Guardian permissions grouped by stable product domains (`guardian.admission.*`, `guardian.protection.*`, and `guardian.command.*`) rather than exposing Gradle/module names as the administrator-facing permission API.
+24. Make client-admission policy explicit per normalized client classification, with deterministic `ALLOW`, `DENY`, or `REQUIRE_CERBERUS` behavior rather than ambiguous implicit defaults.
+25. Provide a flexible Fabric mod-policy model with explicit allowlist/denylist semantics, orthogonal required-mod rules, per-mod constraints, deterministic conflict validation, and no need to whitelist irrelevant runtime/bootstrap entries merely to use allowlist mode.
 
 ---
 
@@ -396,46 +399,129 @@ Client classification
         ↓
 Resolved Guardian profile
         ↓
-Policy action
+Classification action
         ├── ALLOW
         ├── DENY
         └── REQUIRE_CERBERUS
 ```
 
-A default policy might conceptually represent:
+The canonical policy model MUST support an explicit action for each normalized client class. A default profile might conceptually represent:
 
 ```yaml
-bedrock:
-  action: allow
-
-vanilla:
-  action: allow
-
-optifine:
-  action: allow
-
-fabric:
-  action: require-cerberus
-
-unknown:
-  action: deny
+clients:
+  bedrock: ALLOW
+  vanilla: ALLOW
+  optifine: ALLOW
+  fabric: REQUIRE_CERBERUS
+  unknown: DENY
 ```
 
-The exact configuration syntax is deferred.
+The exact YAML spelling/file layout remains deferred, but the internal model is not: a two-state boolean such as `allow-fabric: true/false` is insufficient because Fabric has a meaningful third state, `REQUIRE_CERBERUS`. An implementation MAY offer simple boolean sugar for truly two-state classes, but configuration MUST normalize to the explicit action model above and MUST reject contradictory representations.
 
-Fabric/Cerberus policies SHOULD eventually support:
+Known normalized client classes SHOULD initially include:
 
-- required mods;
-- allowed mods;
-- denied mods;
-- unknown-mod behavior;
+```text
+bedrock
+vanilla
+optifine
+fabric
+unknown
+```
+
+These are administrator-facing policy keys corresponding to the internal classifications from Section 8. Future client classes MAY be added without changing the policy-evaluation architecture.
+
+### 10.1 Brand-rule compatibility and unknown Java clients
+
+Guardian MUST preserve the useful product behavior of BrandBlocker without making raw brand strings a trust boundary.
+
+For Java connections that remain `JAVA_UNKNOWN` after supported classification, policy MAY provide an explicit normalized brand-rule layer with `ALLOWLIST` or `DENYLIST` behavior. Brand rules:
+
+- MUST use deterministic normalized exact values and/or explicitly configured patterns;
+- MUST NOT rely on accidental substring matching;
+- MUST NOT override a trusted Bedrock origin;
+- MUST NOT downgrade a positively classified Fabric client from `REQUIRE_CERBERUS` to ordinary `ALLOW`;
+- MUST be treated as administrator policy over self-reported client metadata, not proof of client identity;
+- MUST have explicit no-match behavior.
+
+This provides the useful legacy ability to allow or deny unusual Java brands while preserving Guardian's stronger classification model.
+
+### 10.2 Fabric mod-policy model
+
+A valid Cerberus manifest is evaluated by a separate mod-policy layer.
+
+The mod-policy model MUST support:
+
+- explicit `ALLOWLIST` and `DENYLIST` modes, or an equivalent unambiguous default-unlisted action;
+- required mods as an orthogonal requirement rather than overloading allow/deny membership;
+- explicit per-mod `ALLOW`/`DENY` rules where needed;
+- unknown/unlisted-mod behavior that is deterministic and visible to administrators;
 - acceptable versions/version predicates;
-- optional artifact hash rules;
+- optional artifact hash constraints;
 - rules for contained/nested mods;
 - protocol compatibility requirements;
 - Cerberus minimum/maximum supported versions where necessary.
 
+Conceptually:
+
+```text
+valid Cerberus manifest
+        ↓
+identify policy-addressable entries
+        ↓
+required-mod checks
+        ↓
+per-mod explicit rules
+        ↓
+unlisted/default mode
+        ↓
+version/hash/contained-mod constraints
+        ↓
+ALLOW or MANIFEST_DENIED
+```
+
+`ALLOWLIST` mode conceptually means an otherwise policy-addressable unlisted mod is denied. `DENYLIST` mode conceptually means an otherwise policy-addressable unlisted mod is allowed. Required-mod checks remain active in either mode.
+
+A required-mod declaration SHOULD also make that mod permitted for membership purposes; administrators should not need to duplicate the same mod in both `required` and `allowed` merely to express “this mod must be present.” A required mod MAY carry its own version/hash constraints. An explicit unconditional deny of the same required mod is a configuration conflict and MUST fail validation.
+
+Guardian MUST distinguish policy-addressable client mods from baseline/bootstrap/runtime manifest entries that an administrator should not have to enumerate merely to make allowlist mode usable. The exact baseline treatment is deferred until real manifests are characterized in Phase 2, but it MUST be explicit, deterministic, documented, and tested. Nested/contained entries MUST NOT become an invisible bypass.
+
+Configuration conflicts such as the same mod being simultaneously required and unconditionally denied, duplicate rule IDs, invalid version expressions, or incompatible rule definitions MUST fail validation rather than depend on undocumented precedence.
+
+Per-mod rules MUST key primarily by canonical Fabric mod ID, not display name. Fabric mod IDs are bounded identifiers and are therefore suitable for deterministic policy and permission suffixes.
+
+### 10.3 Admission evaluation precedence
+
+Client and mod policy are profile-scoped. Evaluation MUST use one documented precedence rather than allowing event/listener order to change the result.
+
+Conceptually:
+
+```text
+trusted origin classification
+        ↓
+normalized Java client classification (when applicable)
+        ↓
+resolve admission profile
+        ↓
+evaluate client-class action
+        ├── DENY
+        │    └── applicable client-policy bypass may exempt
+        ├── ALLOW
+        │    └── no Cerberus interrogation required
+        └── REQUIRE_CERBERUS
+             ↓
+        complete and structurally validate Cerberus protocol
+             ↓
+        evaluate mod policy
+             ↓
+        apply applicable mod-policy bypasses
+             ↓
+        ALLOW or DENY
+```
+
+Raw brand rules are subordinate classifier/policy input only where Section 10.1 permits them. They MUST NOT be evaluated late as a generic override capable of reversing trusted origin, protocol, or manifest-integrity decisions.
+
 Policy evaluation MUST be deterministic and independently testable in `guardian-core`.
+
 
 ---
 
@@ -451,11 +537,21 @@ Recommended resolution order:
 
 ```text
 1. Explicit configured identity/UUID override, if any
-2. Supported pre-login-capable permission/profile provider
+2. Highest-priority matching named admission profile from a supported pre-login-capable permission/provider path
 3. Default Guardian profile
 ```
 
 LuckPerms SHOULD be a first-class optional integration because its API can asynchronously load user data by UUID before a player is fully online.
+
+Named admission profiles SHOULD use a stable permission shape:
+
+```text
+guardian.admission.profile.<profile-id>
+```
+
+Profile IDs used in permission nodes MUST be normalized, bounded administrator-defined identifiers rather than arbitrary display text.
+
+If more than one named profile matches a player, resolution MUST be deterministic. Profiles SHOULD carry an explicit numeric priority; an ambiguous tie between simultaneously matching profiles MUST either be rejected by validation or resolved by a separately documented deterministic rule. Guardian MUST NOT depend on provider iteration order.
 
 If no pre-login-capable provider is installed:
 
@@ -464,6 +560,7 @@ If no pre-login-capable provider is installed:
 - administrative emergency overrides SHOULD use a mechanism that is valid before login, such as explicit UUID configuration.
 
 The exact generic profile-provider SPI MAY be defined during implementation.
+
 
 ### 11.2 Guardian Protection policy model
 
@@ -493,28 +590,88 @@ The initial Protection feature set SHOULD include:
 
 All rule matching MUST normalize command roots deterministically and case-insensitively. Slash/no-slash representation MUST NOT change the decision.
 
-### 11.3 Protection bypass and notification semantics
+### 11.3 Permission namespace and bypass semantics
+
+Guardian's administrator-facing permission API MUST be organized by product domain, not by implementation module:
+
+```text
+guardian.admission.*
+guardian.protection.*
+guardian.command.*
+```
+
+The initial semantic hierarchy SHOULD include at least:
+
+```text
+guardian.admission.profile.<profile-id>
+
+guardian.admission.client.bypass
+guardian.admission.client.bypass.<client-key>
+
+guardian.admission.mod.bypass
+guardian.admission.mod.bypass.<modid>
+
+guardian.protection.bypass
+guardian.protection.command.bypass
+guardian.protection.namespace.bypass
+guardian.protection.visibility.bypass
+guardian.protection.visibility.bypass.<command>
+guardian.protection.notify
+
+guardian.command.<administrative-command>
+```
+
+The exact administrative command leaves may be finalized with the command implementation, but the three domain roots above are fixed.
+
+Guardian MUST provide explicit aggregate permissions such as `guardian.protection.bypass`, `guardian.admission.client.bypass`, and `guardian.admission.mod.bypass`. Correct behavior MUST NOT depend on a permissions provider expanding `*` wildcard assignments. Administrators MAY still use provider-supported wildcards such as `guardian.protection.*` for convenience.
+
+Admission bypass semantics MUST remain policy-scoped:
+
+- `guardian.admission.client.bypass` and its per-client form MAY bypass a classification-level `DENY`;
+- a client-class bypass MUST NOT silently convert `REQUIRE_CERBERUS` into ordinary `ALLOW`;
+- `guardian.admission.mod.bypass` and its per-mod form apply only after a compatible Cerberus exchange has produced a structurally valid manifest;
+- mod bypass permissions MAY exempt configured mod-policy violations but MUST NOT bypass nonce/session validation, protocol compatibility, manifest structural validation, payload limits, proxy-assertion authentication, or other protocol/integrity failures;
+- no broad `guardian.admission.bypass` permission is required for the initial design.
 
 Protection bypass decisions MUST be centralized rather than duplicated independently across root-command filtering, argument-suggestion filtering, and execution listeners.
 
-The permission model SHOULD provide, at minimum, the concepts of:
+Protection semantics are:
 
-- global Protection bypass;
-- execution-policy bypass;
-- namespaced-command-policy bypass;
-- visibility/suggestion-policy bypass;
-- optional per-command visibility/suggestion bypass.
+- `guardian.protection.bypass` — aggregate exemption from Protection enforcement/visibility rules;
+- `guardian.protection.command.bypass` — execution-policy exemption;
+- `guardian.protection.namespace.bypass` — namespaced-command-policy exemption;
+- `guardian.protection.visibility.bypass` — command-root and downstream suggestion visibility exemption;
+- `guardian.protection.visibility.bypass.<command>` — visibility/suggestion exemption for one normalized command root;
+- `guardian.protection.notify` — receives Protection violation notifications and grants no bypass authority.
 
-The exact new `guardian.protection.*` node names are finalized in Phase 1B, but Guardian MUST NOT retain `ezprotector.*` aliases in the initial implementation.
-
-A visibility/suggestion bypass MUST apply consistently to both:
+A visibility bypass MUST apply consistently to both:
 
 - whether the root is present in the command tree;
 - whether argument suggestions for that root are suppressed.
 
-Notification permissions MUST be independent from bypass permissions. Permission to observe a Protection violation MUST NOT imply exemption from the rule, and exemption MUST NOT automatically grant notification visibility.
+Notification authority MUST be independent from bypass authority. Permission to observe a Protection violation MUST NOT imply exemption from the rule, and exemption MUST NOT automatically grant notification visibility.
 
 When Guardian itself changes an active visibility configuration for online players, the Paper adapter MUST refresh affected client command trees using a supported API. Permission-change refresh behavior SHOULD use supported platform/provider mechanisms where available; stale client visibility MUST never be treated as the execution security boundary.
+
+Guardian MUST NOT retain `ezprotector.*` aliases in the initial implementation.
+
+### 11.4 Permission-name length and dynamic suffix constraints
+
+Paper's permission APIs operate on permission names as strings and do not document a small fixed node-length limit. However, permissions-provider storage can impose practical limits. LuckPerms' current MySQL schema stores permission strings in `VARCHAR(200)` columns.
+
+Guardian therefore MUST keep all Guardian-defined permission nodes comfortably below 200 characters. The project SHOULD impose a conservative maximum total permission length of **128 characters** for its own generated/documented nodes.
+
+Dynamic suffixes used in permission names MUST be canonical bounded identifiers rather than arbitrary user-visible strings. In particular:
+
+- Fabric mod IDs are suitable directly because Fabric constrains them to 2–64 ASCII identifier characters;
+- client keys are Guardian-controlled bounded identifiers;
+- admission profile IDs MUST be bounded normalized identifiers;
+- per-command visibility bypass suffixes MUST use a normalized bounded command key and MUST NOT embed arbitrary command arguments or display text.
+
+If a future feature cannot express a stable dynamic permission within this bound, it SHOULD introduce a short configured rule ID rather than lengthening the permission namespace indefinitely.
+
+The current anticipated nodes are far below the conservative limit; for example, `guardian.protection.visibility.bypass.worldedit` is 47 characters and `guardian.admission.client.bypass.java_fabric` would be 44 characters.
+
 
 ---
 
@@ -1028,15 +1185,18 @@ Compression MAY be considered only if necessary; it SHOULD NOT be added merely b
 
 ## 26. Client-brand behavior
 
-Brand information is a useful policy signal, not cryptographic proof.
+Brand information is a useful policy/classification signal, not cryptographic proof.
 
-Guardian SHOULD normalize brands deterministically and SHOULD avoid accidental substring behavior that lets an unrelated string satisfy an allow rule merely because it contains an approved token.
+Guardian SHOULD normalize brands deterministically and MUST avoid accidental substring behavior that lets an unrelated string satisfy an allow rule merely because it contains an approved token.
 
-The exact brand-rule syntax is deferred, but exact normalized values and explicitly requested patterns are preferable to implicit substring matching.
+Known built-in client classifications are governed by the explicit per-class action model in Section 10. Optional brand allowlist/denylist behavior is intended primarily to preserve useful policy control over otherwise unknown Java brands; it MUST NOT supersede trusted Bedrock origin classification or remove the Cerberus requirement from a positively classified Fabric client.
+
+Exact normalized values and explicitly requested patterns are preferable to implicit substring matching.
 
 A null/empty/unknown brand MUST have explicit policy behavior.
 
 Unknown brand must not default to "allow because detection failed" unless the administrator deliberately configures that outcome.
+
 
 ---
 
@@ -1514,19 +1674,26 @@ No client-side secret may be treated as proof of honesty.
 
 ## Phase 3 — Guardian policy engine
 
-**Goal:** Turn reported manifests into configurable admission decisions.
+**Goal:** Turn normalized client classifications and reported manifests into flexible, deterministic admission decisions.
 
 Implement:
 
 - default policy;
-- named profiles;
-- allowed/denied/required mods;
-- unknown-mod handling;
+- named profiles with deterministic explicit priority;
+- canonical per-client-class `ALLOW` / `DENY` / `REQUIRE_CERBERUS` actions;
+- optional normalized allowlist/denylist brand rules for otherwise unknown Java brands;
+- mod-policy `ALLOWLIST` / `DENYLIST` semantics (or an equivalent explicit unlisted default);
+- orthogonal required-mod rules;
+- per-mod allow/deny rules;
+- unknown/unlisted-mod handling;
 - version rules;
-- contained-mod semantics;
+- contained/nested-mod semantics;
+- explicit baseline/bootstrap/runtime manifest-entry treatment;
 - optional artifact hashes;
 - classification-specific actions;
 - explicit decision reasons;
+- validation that rejects contradictory rules rather than relying on hidden precedence;
+- policy-scoped admission bypass permissions from Section 11.3;
 - atomic reload;
 - files-only validation.
 
@@ -1534,7 +1701,11 @@ Implement profile resolution:
 
 - explicit identity overrides;
 - optional LuckPerms integration;
+- `guardian.admission.profile.<profile-id>` selection;
+- deterministic profile priority when multiple permissions match;
 - default fallback profile.
+
+Acceptance tests MUST cover both client-class policy and mod-policy modes, including an allowlisted unusual Java brand, a denied unusual Java brand, Fabric remaining attestation-required despite brand rules, required mods under both mod modes, unlisted mods in both modes, conflicting invalid rules, and admission bypass permissions that do not bypass protocol/integrity validation.
 
 ---
 
@@ -1689,6 +1860,21 @@ Before first public production release, testing SHOULD cover at minimum:
 | Backend direct-connect path | Rejected by network/security posture |
 | Invalid config reload | Prior config remains active |
 | Optional integration missing | Deterministic documented behavior |
+| Client class action = ALLOW | Matching normalized class admitted without unnecessary attestation |
+| Client class action = DENY | Matching normalized class denied |
+| Client class action = REQUIRE_CERBERUS | Matching Fabric class cannot be admitted as ordinary allow |
+| Unknown Java brand allowed by configured brand allowlist | Allow under explicit unknown-brand policy |
+| Unknown Java brand denied by configured brand denylist | Deny under explicit unknown-brand policy |
+| Fabric brand matches permissive raw brand rule | Still follows `JAVA_FABRIC` classification and Cerberus requirement |
+| Mod policy allowlist, unlisted policy-addressable mod | `MANIFEST_DENIED` |
+| Mod policy denylist, unlisted policy-addressable mod | Allow unless another rule fails |
+| Required mod missing in either mod-policy mode | `MANIFEST_DENIED` |
+| Required mod present but not redundantly listed as allowed in allowlist mode | Treated as permitted/required, subject to its constraints |
+| Contradictory mod policy | Validation failure; prior snapshot retained on reload |
+| `guardian.admission.client.bypass.<client>` on class-level DENY | Classification policy denial bypassed for that client key |
+| Client bypass on `REQUIRE_CERBERUS` class | Cerberus requirement remains |
+| `guardian.admission.mod.bypass.<modid>` with valid manifest | Only applicable mod-policy violation bypassed |
+| Admission bypass with malformed/replayed/invalid protocol state | Deny; policy bypass does not bypass integrity validation |
 | Protection disabled, Admission enabled | Admission remains functional |
 | Admission disabled, Protection enabled | Paper Protection remains functional without Velocity/Cerberus/Geyser/Floodgate |
 | Visibility allowlist mode | Only listed/permitted roots exposed, subject to bypass |
@@ -1738,6 +1924,14 @@ The following are hard project invariants unless explicitly revised:
 24. **No player/staff-facing Guardian feedback string is hard-coded in Java source; locale resources are authoritative.**
 25. **No existing malformed/invalid administrator config or locale file is silently regenerated or overwritten.**
 26. **Any eZProtector-derived source must come from the identified BadWolfMC GPLv3 lineage unless licensing is deliberately revisited.**
+27. **Guardian permissions are domain-scoped under `guardian.admission.*`, `guardian.protection.*`, and `guardian.command.*`; runtime correctness does not depend on wildcard expansion by a permissions provider.**
+28. **Admission policy bypasses may bypass configured policy outcomes only; they never bypass protocol, session, manifest-structure, payload-limit, or trusted-proxy integrity checks.**
+29. **A client-class bypass does not silently turn `REQUIRE_CERBERUS` into ordinary `ALLOW`.**
+30. **Known client classifications use explicit deterministic actions; unknown Java brand rules cannot override trusted Bedrock classification or a positive Fabric/Cerberus requirement.**
+31. **Mod-policy allowlist/denylist semantics, required-mod semantics, and baseline/runtime-entry handling are explicit and deterministic; contradictory rules fail validation.**
+32. **A required mod is not forced to appear redundantly in an allowlist merely to be considered permitted; required-plus-unconditionally-denied is invalid configuration.**
+33. **Admission evaluation follows one documented precedence; raw brand rules and policy bypasses cannot act as late generic overrides of protocol/integrity decisions.**
+34. **Guardian-defined permission nodes remain within a conservative 128-character project limit.**
 
 ---
 
@@ -1754,14 +1948,18 @@ The following should remain open until the indicated implementation phase rather
 - BadWolfMC-only vs broader generic trust onboarding for third-party Guardian servers;
 - key rotation format;
 - exact proxy assertion cryptographic format;
-- exact mod-version rule syntax;
 - exact nested/contained-mod policy DSL;
 - exact artifact hashing rules for directory/development origins;
 - whether signed official Cerberus release identity is adopted;
 - if adopted, its canonical digest/signature algorithm, metadata format, and release-key lifecycle;
 - exact configuration/locale file split and names;
-- exact new `guardian.protection.*` permission node spelling/hierarchy beyond the required semantics;
 - exact Protection rule YAML syntax;
+- exact admission-policy YAML file split/spelling, provided it normalizes to the Section 10 action model;
+- whether named admission profiles support inheritance/composition in v1 or are complete standalone resolved profiles;
+- exact mod-version predicate syntax;
+- exact baseline/bootstrap/runtime manifest-entry set after Phase 2 real-manifest characterization;
+- whether per-command execution bypasses or per-namespace bypass leaves are needed beyond the initial permission hierarchy;
+- exact `guardian.command.*` administrative leaf permissions;
 - exact locale selection strategy beyond required default/fallback behavior;
 - whether optional PlaceholderAPI expansion is added to ordinary rendered messages;
 - whether a generic console-command Protection action ships in the initial public release;
@@ -1797,6 +1995,8 @@ The implementation should re-check current documentation when each phase begins 
   https://jd.papermc.io/paper/26.2/com/destroystokyo/paper/event/brigadier/AsyncPlayerSendSuggestionsEvent.html
 - Paper 26.2 `Player#updateCommands()`
   https://jd.papermc.io/paper/26.2/org/bukkit/entity/Player.html
+- Paper 26.2 `Permissible` permission-string API
+  https://jd.papermc.io/paper/26.2/org/bukkit/permissions/Permissible.html
 
 ### Adventure / MiniMessage
 
@@ -1818,6 +2018,8 @@ The implementation should re-check current documentation when each phase begins 
 
 - Fabric documentation
   https://docs.fabricmc.net/
+- Fabric 26.2 `fabric.mod.json` specification / mod-ID constraints
+  https://docs.fabricmc.net/develop/loader/fabric-mod-json
 - Fabric Loader API / `FabricLoader#getAllMods()`
   https://maven.fabricmc.net/docs/fabric-loader-0.18.6/net/fabricmc/loader/api/FabricLoader.html
 - Fabric Loader `ModContainer`
@@ -1834,6 +2036,8 @@ The implementation should re-check current documentation when each phase begins 
 
 - Developer API usage / offline user loading
   https://luckperms.net/wiki/Developer-API-Usage
+- Current LuckPerms MySQL schema (`permission VARCHAR(200)`)
+  https://github.com/LuckPerms/LuckPerms/blob/master/common/src/main/resources/me/lucko/luckperms/schema/mysql.sql
 
 ---
 
@@ -1871,7 +2075,11 @@ Phase 1A should now replace the feasibility-oriented foundation with the product
 
 Phase 1B should then replace only the approved eZProtector command-protection behavior: execution rules, command visibility/suggestion policy, namespaced-command policy, sane centralized bypass semantics, and permission-gated notifications. It must not revive eZProtector's legacy client/mod countermeasures, fake information responses, or permission namespace.
 
+Guardian's permission API is now conceptually fixed under `guardian.admission.*`, `guardian.protection.*`, and `guardian.command.*`. Aggregate bypass nodes are explicit; correctness must not depend on wildcard expansion. Admission policy bypasses never bypass protocol/integrity checks, and a client-class bypass does not remove an explicit `REQUIRE_CERBERUS` action.
+
 The current eZProtector tab-completion implementation checks a nominal global bypass in both its root-tree and legacy argument-completion paths, yet BadWolfMC has observed bypass behavior that is not reliable in practice. Guardian MUST therefore test the complete end-to-end client command-tree/suggestion behavior rather than considering a permission check in one listener sufficient. In particular, root visibility and downstream argument suggestions must share one Protection decision, and Guardian-owned visibility changes must refresh online client command trees through supported Paper APIs.
+
+For Phase 3, client configuration must normalize to explicit per-class `ALLOW` / `DENY` / `REQUIRE_CERBERUS` actions. Optional allowlist/denylist brand rules are for otherwise unknown Java brands and cannot override a positive Fabric/Cerberus requirement. Fabric mod policy must support clear allowlist/denylist semantics plus orthogonal required-mod rules, deterministic baseline/runtime-entry treatment, and validation that rejects contradictory policy.
 
 Do not accidentally promote Phase 0 spike details into permanent production configuration merely because they were sufficient for feasibility. In particular, exact assertion format/version, shared-secret provisioning UX, timeout defaults, logging verbosity, and disagreement policy still require deliberate production design in their appropriate phases.
 
