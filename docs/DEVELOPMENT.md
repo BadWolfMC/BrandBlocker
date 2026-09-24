@@ -7,7 +7,7 @@ Guardian/Cerberus targets Java 25 and uses the repository Gradle wrapper.
 Use:
 
 ```powershell
-.\gradlew.bat clean test :guardian-paper:jar :cerberus-fabric:build
+.\gradlew.bat clean test :guardian-paper:jar :guardian-velocity:jar :cerberus-fabric:build
 ```
 
 Do not replace the wrapper with a system Gradle installation. The authoritative wrapper is:
@@ -51,3 +51,16 @@ Get-ChildItem -Directory -Recurse -Filter build |
 ```
 
 The next build will regenerate the caches it needs. Do **not** delete `gradle/wrapper/` unless intentionally regenerating the wrapper.
+
+
+## Phase 1A module boundaries
+
+`guardian-core` is the platform-neutral Admission domain. `guardian-protection` is the independent platform-neutral Protection domain. Neither module may import Paper, Velocity, Fabric, Geyser/Floodgate, or the other domain merely for convenience. Guardian-Paper is the host/adaptor that composes them. Architecture tests enforce these boundaries.
+
+Phase 1A intentionally does not add Guardian Protection command listeners. If a local test shows Guardian altering command execution, visibility, namespaced commands, or suggestions before Phase 1B, treat that as a regression.
+
+## Implementation bridge discipline
+
+`docs/IMPLEMENTATION_BRIDGES.md` is the required register for temporary implementation scaffolding that crosses phase boundaries. Update it whenever prototype code, temporary provisioning, simplified policy logic, hard-coded operational values, or early integrations are retained intentionally. Each entry must name an owning phase and a concrete retirement condition.
+
+At every phase closeout, review the active bridge register before declaring the phase complete. A bridge may be removed only when its retirement condition is satisfied or when the authoritative project plan explicitly promotes that behavior to the final contract.

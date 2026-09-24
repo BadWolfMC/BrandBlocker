@@ -29,7 +29,6 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
-import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
 import java.security.SecureRandom;
@@ -49,8 +48,8 @@ import java.util.concurrent.TimeUnit;
 @Plugin(
     id = "guardian",
     name = "Guardian",
-    version = "0.0.7-phase0b3",
-    description = "Guardian Phase 0B.3 Geyser/Floodgate feasibility spike",
+    version = "0.1.0-phase1a",
+    description = "Guardian Admission for Velocity (proven Phase 0 transport retained through Phase 1A)",
     authors = {"BadWolfMC"},
     dependencies = {
         @Dependency(id = "geyser", optional = true),
@@ -74,6 +73,7 @@ public final class GuardianVelocityPlugin {
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentHashMap<UUID, VelocityAdmissionSession> sessions = new ConcurrentHashMap<>();
     private final BedrockDetector bedrockDetector;
+    private final VelocityMessages messages;
     private byte[] proxySecret;
 
     @Inject
@@ -81,6 +81,7 @@ public final class GuardianVelocityPlugin {
         this.server = server;
         this.logger = logger;
         this.bedrockDetector = new BedrockDetector(server, logger);
+        this.messages = VelocityMessages.load();
     }
 
     @Subscribe
@@ -179,7 +180,7 @@ public final class GuardianVelocityPlugin {
         // task therefore holds progression in CONFIGURATION without blocking a Velocity worker.
         return EventTask.resumeWhenComplete(hold.exceptionally(throwable -> {
             logger.error("Guardian Phase 0B.3 admission future failed for {}", player.getUsername(), throwable);
-            player.disconnect(Component.text(messageFor(DecisionReason.CONFIGURATION_ERROR)));
+            player.disconnect(messages.render(DecisionReason.CONFIGURATION_ERROR, session.classification()));
             return null;
         }));
     }
@@ -355,7 +356,9 @@ public final class GuardianVelocityPlugin {
         logger.info("Guardian Phase 0B.3 decision for {}: {} / {} ({})",
             player.getUsername(), decision.outcome(), decision.reason(), decision.detail());
         if (decision.outcome() == DecisionOutcome.DENY) {
-            player.disconnect(Component.text(messageFor(decision.reason())));
+            VelocityAdmissionSession session = sessions.get(player.getUniqueId());
+            ClientClassification classification = session == null ? null : session.classification();
+            player.disconnect(messages.render(decision.reason(), classification));
         }
     }
 
@@ -426,18 +429,4 @@ public final class GuardianVelocityPlugin {
             || identifier.equals(PROXY_ADMISSION);
     }
 
-    private static String messageFor(DecisionReason reason) {
-        return switch (reason) {
-            case CERBERUS_REQUIRED -> "Fabric is supported, but the Cerberus client mod is required.";
-            case CERBERUS_TIMEOUT -> "Cerberus was detected, but the Guardian handshake timed out.";
-            case CERBERUS_PROTOCOL_UNSUPPORTED ->
-                "Cerberus is installed, but its Guardian protocol version is incompatible.";
-            case MANIFEST_DENIED ->
-                "Cerberus responded successfully, but the Phase 0B test manifest was denied.";
-            case MANIFEST_INVALID -> "Cerberus returned invalid Guardian protocol data.";
-            case CLIENT_DENIED -> "This client brand is not admitted by the Phase 0B prototype.";
-            case CONFIGURATION_ERROR -> "Guardian could not complete the Phase 0B admission check.";
-            default -> "Guardian denied this connection.";
-        };
-    }
 }

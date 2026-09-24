@@ -68,7 +68,7 @@ Guardian/Cerberus MUST:
 18. Support explicit allowlist and denylist modes for command visibility and namespaced-command policy.
 19. Keep all player/staff-facing message and feedback strings in translatable locale resources rather than Java source.
 20. Use Adventure components and MiniMessage for Guardian-controlled player/staff-facing text, with safe typed internal placeholders.
-21. Use versioned, validated configuration files that never overwrite or regenerate an existing administrator file merely because it is malformed.
+21. Use versioned, validated configuration files with explicit recovery semantics: an invalid administrator file is never silently overwritten; recoverable initial-startup syntax/validation failures are preserved to timestamped backups before packaged defaults are restored, while reload failures leave both the edited file and prior active snapshot untouched.
 22. Use new `guardian.*` permission nodes and provide an explicit eZProtector → Guardian permission migration guide rather than retaining legacy permission aliases.
 23. Keep Guardian permissions grouped by stable product domains (`guardian.admission.*`, `guardian.protection.*`, and `guardian.command.*`) rather than exposing Gradle/module names as the administrator-facing permission API.
 24. Make client-admission policy explicit per normalized client classification, with deterministic `ALLOW`, `DENY`, or `REQUIRE_CERBERUS` behavior rather than ambiguous implicit defaults.
@@ -1114,12 +1114,9 @@ Reload SHOULD use an atomic "parse → validate → replace active snapshot" pat
 
 A failed reload MUST leave the prior known-good configuration active.
 
-Startup behavior for a completely invalid initial configuration MUST be explicit and prominently logged. The final implementation contract must decide whether the platform adapter:
-- refuses Guardian initialization;
-- blocks policy-requiring client classes;
-- or provides an operator-selected strict startup mode.
+Startup behavior for a malformed or structurally invalid initial configuration MUST be explicit and prominently logged. Guardian-Paper MUST preserve the invalid administrator file to a timestamped backup before restoring a packaged default and must parse/validate the restored candidate from scratch before activation. Unsupported schema versions are not automatically replaced or downgraded.
 
-It MUST NOT silently fall back to permissive behavior without an explicit documented policy.
+This recovery MUST NOT silently fall back to permissive behavior: the restored packaged configuration is the documented safe default, and activation still requires full validation.
 
 ### 24.4.1 Configuration file safety and schema versioning
 
@@ -1139,6 +1136,17 @@ The parser MUST distinguish at least:
 A missing file MAY cause Guardian to create documented defaults.
 
 An **existing malformed or invalid file MUST NOT be silently overwritten, reset, regenerated, or replaced with defaults** merely because parsing failed.
+
+On initial startup, Guardian MAY recover from a malformed or structurally invalid administrator file only if all of the following are true:
+
+1. the original bytes are first preserved to a distinct timestamped backup adjacent to the file;
+2. the recovery is logged prominently with both the original and backup paths;
+3. packaged defaults are restored only for resources Guardian actually ships (for example `config.yml` and the required fallback locale);
+4. an invalid optional locale with no packaged default may be backed up and removed so the required fallback locale can take effect;
+5. the regenerated/fallback candidate is parsed and validated from scratch before activation; and
+6. unsupported schema versions are **not** automatically recovered or downgraded. They require an explicit migration/administrator decision.
+
+This recovery is a startup availability/safety mechanism, not a reload mechanism.
 
 Reload MUST:
 
@@ -1602,7 +1610,7 @@ Implement/refine:
 - modern direct disconnect handling;
 - default Admission policy infrastructure;
 - versioned config parse/validate/immutable-snapshot lifecycle;
-- malformed-file preservation: never regenerate/overwrite an existing bad YAML file;
+- startup malformed-file recovery with timestamped preservation before packaged-default restoration;
 - atomic reload preserving prior known-good snapshots;
 - locale catalog loading/validation;
 - Adventure/MiniMessage rendering with safe internal placeholder resolution;
@@ -1614,6 +1622,25 @@ Carry forward the practical ability to allow/deny non-Fabric client brands.
 Phase 1A MUST preserve the invariant that Guardian-Paper can load with Admission only, Protection only, or both enabled.
 
 Do not yet implement the full Fabric policy engine unless needed for the existing prototype integration.
+
+#### Phase 1A implementation checkpoint — 2026-09-24
+
+The current Phase 1A implementation candidate now establishes the production foundation described above while deliberately retaining the proven Phase 0 transport adapters. In particular:
+
+- `guardian-core` remains Admission-only and platform-neutral;
+- `guardian-protection` now exists as a separate platform-neutral module and does not depend on `guardian-core`;
+- Guardian-Paper is a small runtime host which can enable Admission, Protection, both, or neither;
+- Protection activation in Phase 1A installs no command execution, visibility, namespace, suggestion, or notification behavior;
+- Paper configuration begins at `schema-version: 1` and normalizes client classes to explicit `ALLOW` / `DENY` / `REQUIRE_CERBERUS` actions;
+- exact normalized allowlist/denylist brand rules apply only to `JAVA_UNKNOWN` and therefore cannot override a positive Fabric classification;
+- the default locale is a versioned English properties catalog rendered through Adventure/MiniMessage with unparsed internal placeholders;
+- the configuration loader/runtime manager remains non-mutating: reload candidates replace the active immutable snapshot only after configuration and locale validation succeed, and failed reload files remain untouched;
+- Guardian-Paper startup recovery preserves malformed/structurally invalid administrator files to UTC timestamped `.bak` files before restoring packaged defaults. Invalid optional locale files are similarly preserved and then omitted so the required fallback catalog can take effect. Recovery always reparses/revalidates before activation, and unsupported schema versions remain fatal rather than being silently downgraded;
+- the Phase 0B `GUARDIAN_PHASE0B_PROXY_SECRET` environment variable remains a transitional feasibility-provisioning mechanism. Phase 1A does not promote its naming/provisioning UX into the final Phase 5 contract;
+- the Phase 0 test-manifest evaluator remains an explicitly transitional integration component until the real manifest/policy phases replace it. Phase 1A does not disguise it as the final mod-policy engine.
+- active implementation bridges and their owning replacement phases/retirement conditions are tracked in `docs/IMPLEMENTATION_BRIDGES.md`; phase closeout MUST review that register so feasibility scaffolding cannot silently become permanent.
+
+The candidate is not considered Phase 1A-complete until the clean build, local Paper/configuration-safety checks, standalone Admission regression, and focused Velocity-network regression in `docs/PHASE_1A_VERIFICATION.md` pass.
 
 ### Phase 1B — Guardian Protection / eZProtector successor
 
@@ -1885,7 +1912,9 @@ Before first public production release, testing SHOULD cover at minimum:
 | Global visibility bypass | Root and argument suggestions both bypass filtering |
 | Per-command visibility bypass | Applies consistently to root and arguments for that command |
 | Protection config reload invalid | Prior Protection snapshot remains active; file untouched |
-| Malformed existing YAML | File is not regenerated/overwritten |
+| Malformed existing YAML at startup | Original preserved to timestamped backup; packaged default restored and fully revalidated before activation |
+| Malformed/invalid reload candidate | File remains untouched; prior known-good runtime snapshot remains active |
+| Unsupported config/locale schema version | No automatic recovery/downgrade; activation or reload fails with an actionable diagnostic |
 | Guardian visibility config changes | Online command trees are refreshed through supported API |
 | Notification permission without bypass | Receives configured notices but remains subject to rules |
 | Bypass without notification permission | Bypasses applicable rule without gaining notices |
@@ -1922,7 +1951,7 @@ The following are hard project invariants unless explicitly revised:
 22. **No legacy eZProtector client/mod countermeasure is ported into Guardian Protection.**
 23. **No legacy `ezprotector.*` permission alias is required by Guardian; migration is documentation-driven.**
 24. **No player/staff-facing Guardian feedback string is hard-coded in Java source; locale resources are authoritative.**
-25. **No existing malformed/invalid administrator config or locale file is silently regenerated or overwritten.**
+25. **No existing malformed/invalid administrator config or locale file is silently regenerated or overwritten; recoverable startup replacement requires a preserved timestamped backup, prominent diagnostics, and full revalidation, while reload never rewrites the candidate.**
 26. **Any eZProtector-derived source must come from the identified BadWolfMC GPLv3 lineage unless licensing is deliberately revisited.**
 27. **Guardian permissions are domain-scoped under `guardian.admission.*`, `guardian.protection.*`, and `guardian.command.*`; runtime correctness does not depend on wildcard expansion by a permissions provider.**
 28. **Admission policy bypasses may bypass configured policy outcomes only; they never bypass protocol, session, manifest-structure, payload-limit, or trusted-proxy integrity checks.**
@@ -1965,7 +1994,6 @@ The following should remain open until the indicated implementation phase rather
 - whether a generic console-command Protection action ships in the initial public release;
 - whether Guardian-Velocity ever gains network-global/proxy-owned command Protection;
 - exact admin command syntax;
-- exact behavior when the initial configuration is invalid at process startup;
 - whether a public read-only Guardian API ships in v1.0;
 - whether optional persistent audit storage is ever needed.
 
@@ -2043,7 +2071,7 @@ The implementation should re-check current documentation when each phase begins 
 
 # 38. Handoff context for the next development chat
 
-**Phase 0 feasibility is complete. Phase 1A is the next implementation slice, followed by Phase 1B Guardian Protection.**
+**Phase 0 feasibility is complete. A Phase 1A implementation candidate is now prepared; Phase 1B begins only after Phase 1A build/local/live verification is accepted.**
 
 The project should continue treating this document as the primary design authority. BrandBlocker and the BadWolfMC GPLv3 eZProtector fork are legacy behavior/provenance references, not implementation architectures to preserve.
 
@@ -2071,7 +2099,7 @@ The BadWolfMC Velocity-network result is also settled:
 - a new proxy connection creates a fresh admission session and fresh Cerberus challenge when applicable;
 - standalone Guardian-Paper remains supported without Velocity, Geyser, or Floodgate.
 
-Phase 1A should now replace the feasibility-oriented foundation with the production Guardian Admission foundation, add the independent `guardian-protection` domain boundary, and establish the versioned configuration/localization lifecycle described in this contract while preserving every proven authority and lifecycle boundary above.
+Phase 1A now replaces the feasibility-oriented foundation with the production Guardian Admission foundation, adds the independent `guardian-protection` domain boundary, and establishes the versioned configuration/localization lifecycle described in this contract while preserving every proven authority and lifecycle boundary above. The implementation remains a candidate until the Phase 1A verification gate passes.
 
 Phase 1B should then replace only the approved eZProtector command-protection behavior: execution rules, command visibility/suggestion policy, namespaced-command policy, sane centralized bypass semantics, and permission-gated notifications. It must not revive eZProtector's legacy client/mod countermeasures, fake information responses, or permission namespace.
 
@@ -2099,6 +2127,6 @@ Backend switching was live-tested with Fabric, vanilla, and Bedrock. Admission i
 
 For BadWolfMC's production topology, Guardian-Velocity is therefore the preferred admission authority and Guardian-Paper is the trusted backend verifier. For non-Velocity deployments, Guardian-Paper remains a supported standalone authority using the Phase 0A hybrid.
 
-The project can proceed to Phase 1A while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**.
+The project can complete Phase 1A verification while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**. Phase 1B should not begin until that verification is accepted.
 
 Guardian's scope is now intentionally broader than the BrandBlocker replacement originally envisioned, but it remains bounded: Admission and Protection are separate domains under one ecosystem rather than a single undifferentiated security subsystem. The selected eZProtector successor scope is command execution/disclosure protection only; historical client-mod tricks and fabricated information responses are retired.

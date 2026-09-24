@@ -3,6 +3,9 @@ package com.badwolfmc.guardian.core;
 public enum DecisionReason {
     BEDROCK_POLICY,
     VANILLA_POLICY,
+    OPTIFINE_POLICY,
+    UNKNOWN_BRAND_POLICY,
+    CLIENT_POLICY_ALLOWED,
     CERBERUS_VERIFIED,
     PROXY_ADMISSION_VERIFIED,
     PROXY_ASSERTION_REQUIRED,

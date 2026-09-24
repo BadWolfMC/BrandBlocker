@@ -17,6 +17,7 @@ class Phase0CoreTest {
         assertEquals(ClientClassification.JAVA_VANILLA, BrandClassifier.classify("vanilla"));
         assertEquals(ClientClassification.JAVA_VANILLA, BrandClassifier.classify(" VANILLA "));
         assertEquals(ClientClassification.JAVA_FABRIC, BrandClassifier.classify("fabric"));
+        assertEquals(ClientClassification.JAVA_OPTIFINE, BrandClassifier.classify("OptiFine"));
         assertEquals(ClientClassification.JAVA_UNKNOWN, BrandClassifier.classify("fabric-but-not-really"));
         assertEquals(ClientClassification.JAVA_UNKNOWN, BrandClassifier.classify(null));
     }

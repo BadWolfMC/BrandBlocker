@@ -1,17 +1,50 @@
-# Phase 0A feasibility-spike timing only.
-# Production configuration will be designed in a later phase.
-phase0:
-  # Authority mode for this Paper server.
-  # - standalone: Guardian-Paper performs the Phase 0A hybrid admission itself.
-  # - velocity: Guardian-Velocity is authoritative; Paper verifies only a trusted
-  #   guardian:proxy-admission assertion and does not re-attest Cerberus.
+# Guardian production configuration schema.
+# On initial startup, malformed/structurally invalid files are first preserved as
+# timestamped .bak files before Guardian restores this packaged default. Reload never
+# rewrites an invalid candidate; the prior known-good runtime snapshot remains active.
+schema-version: 1
+
+features:
+  # Admission and Protection are independent domains. Phase 1A establishes the
+  # Protection boundary; command-protection behavior is implemented in Phase 1B.
+  admission:
+    enabled: true
+  protection:
+    enabled: false
+
+locale:
+  # Locale resources are loaded from plugins/Guardian/locales/<id>.properties.
+  # en_us is always the required fallback catalog.
+  default: en_us
+
+messages:
+  # Shown as plain, safely inserted text where a locale template includes <help_url>.
+  help-url: "https://www.badwolfmc.com/"
+
+admission:
+  # standalone: Guardian-Paper is authoritative.
+  # velocity: Guardian-Velocity is authoritative and Paper verifies only the
+  # trusted proxy admission assertion. Phase 5 will finalize proxy provisioning UX.
   authority: standalone
 
-  # Maximum time a compatible Cerberus client may remain in the PLAY quarantine
-  # while the nonce challenge/response is completed.
-  handshake-timeout-seconds: 10
+  standalone:
+    # These retain the Phase 0A live-tested transport values. They are runtime
+    # settings, not protocol constants, and may be retuned without a schema bump.
+    handshake-timeout-seconds: 10
+    challenge-channel-wait-ticks: 40
 
-  # Maximum number of ticks Guardian waits for Paper to observe Cerberus's
-  # guardian:challenge PLAY channel before treating the handshake as timed out.
-  # This value may not exceed the total handshake timeout in ticks.
-  challenge-channel-wait-ticks: 40
+  # Minimal Phase 1A client-class policy. Named profiles and full Fabric mod
+  # policy remain deliberately deferred to Phase 3.
+  clients:
+    bedrock: ALLOW
+    vanilla: ALLOW
+    optifine: ALLOW
+    fabric: REQUIRE_CERBERUS
+    unknown: DENY
+
+  # Exact normalized rules apply only after a Java connection remains UNKNOWN.
+  # ALLOWLIST requires clients.unknown=DENY; DENYLIST requires clients.unknown=ALLOW.
+  # This preserves BrandBlocker-style allow/deny control without substring matching.
+  unknown-brands:
+    mode: ALLOWLIST
+    brands: []

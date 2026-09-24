@@ -6,5 +6,5 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'guardian-cerberus-phase0b'
-include 'guardian-protocol', 'guardian-core', 'guardian-paper', 'guardian-velocity', 'cerberus-fabric'
+rootProject.name = 'guardian-cerberus'
+include 'guardian-protocol', 'guardian-core', 'guardian-protection', 'guardian-paper', 'guardian-velocity', 'cerberus-fabric'

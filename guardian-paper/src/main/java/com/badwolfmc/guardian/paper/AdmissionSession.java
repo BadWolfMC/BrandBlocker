@@ -1,6 +1,8 @@
 package com.badwolfmc.guardian.paper;
 
+import com.badwolfmc.guardian.core.ClientClassification;
 import com.badwolfmc.guardian.core.GuardianDecision;
+import com.badwolfmc.guardian.paper.config.GuardianRuntimeSnapshot;
 import com.badwolfmc.guardian.protocol.ProxyAdmissionAssertion;
 import com.badwolfmc.guardian.protocol.Response;
 
@@ -11,22 +13,30 @@ import java.util.concurrent.atomic.AtomicReference;
 
 final class AdmissionSession {
     private final UUID playerId;
+    private final GuardianRuntimeSnapshot snapshot;
     private final CompletableFuture<Response> response = new CompletableFuture<>();
     private final AtomicReference<GuardianDecision> decision = new AtomicReference<>();
     private final AtomicBoolean challengeSent = new AtomicBoolean();
     private final AtomicReference<ProxyAdmissionAssertion> proxyAdmission = new AtomicReference<>();
+    private final AtomicReference<GuardianDecision> configurationPresenceFailure = new AtomicReference<>();
     private volatile byte[] nonce;
     private volatile boolean cerberusPresent;
     private volatile Integer cerberusProtocol;
     private volatile boolean playHandshakeRequired;
     private volatile boolean quarantined;
+    private volatile ClientClassification classification;
 
-    AdmissionSession(UUID playerId) {
+    AdmissionSession(UUID playerId, GuardianRuntimeSnapshot snapshot) {
         this.playerId = playerId;
+        this.snapshot = snapshot;
     }
 
     UUID playerId() {
         return playerId;
+    }
+
+    GuardianRuntimeSnapshot snapshot() {
+        return snapshot;
     }
 
     CompletableFuture<Response> response() {
@@ -90,6 +100,22 @@ final class AdmissionSession {
         return quarantined;
     }
 
+    ClientClassification classification() {
+        return classification;
+    }
+
+    void setClassification(ClientClassification classification) {
+        this.classification = classification;
+    }
+
+    GuardianDecision configurationPresenceFailure() {
+        return configurationPresenceFailure.get();
+    }
+
+    void recordConfigurationPresenceFailure(GuardianDecision failure) {
+        configurationPresenceFailure.compareAndSet(null, failure);
+    }
+
     ProxyAdmissionAssertion proxyAdmission() {
         return proxyAdmission.get();
     }
@@ -104,5 +130,4 @@ final class AdmissionSession {
         proxyAdmission.set(assertion);
         return true;
     }
-
 }

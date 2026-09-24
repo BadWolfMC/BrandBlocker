@@ -1,0 +1,182 @@
+package com.badwolfmc.guardian.paper.config;
+
+import com.badwolfmc.guardian.core.AdmissionPolicy;
+import com.badwolfmc.guardian.core.BrandRuleMode;
+import com.badwolfmc.guardian.core.ClientAction;
+import com.badwolfmc.guardian.core.ClientClassification;
+import com.badwolfmc.guardian.core.UnknownBrandPolicy;
+import com.badwolfmc.guardian.paper.PaperAuthorityMode;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.EnumMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+public final class GuardianConfigLoader {
+    public static final int SCHEMA_VERSION = 1;
+    private static final int MAX_HANDSHAKE_SECONDS = 60;
+    private static final int MAX_LOCALE_ID_LENGTH = 32;
+
+    public GuardianPaperSettings load(Path path) throws GuardianConfigurationException {
+        if (!Files.isRegularFile(path)) {
+            throw error(path, GuardianConfigurationException.Kind.MISSING, "file is missing");
+        }
+
+        YamlConfiguration yaml = new YamlConfiguration();
+        try {
+            yaml.load(path.toFile());
+        } catch (IOException | InvalidConfigurationException ex) {
+            throw new GuardianConfigurationException(path, GuardianConfigurationException.Kind.MALFORMED,
+                "malformed YAML: " + ex.getMessage(), ex);
+        }
+
+        int schema = requireInt(yaml, path, "schema-version");
+        if (schema != SCHEMA_VERSION) {
+            String relation = schema > SCHEMA_VERSION ? "newer unsupported" : "older unsupported";
+            throw error(path, GuardianConfigurationException.Kind.UNSUPPORTED_SCHEMA,
+                "schema-version " + schema + " is " + relation
+                    + "; supported schema-version is " + SCHEMA_VERSION);
+        }
+
+        boolean admissionEnabled = requireBoolean(yaml, path, "features.admission.enabled");
+        boolean protectionEnabled = requireBoolean(yaml, path, "features.protection.enabled");
+        String locale = requireString(yaml, path, "locale.default").toLowerCase(Locale.ROOT);
+        if (!locale.matches("[a-z0-9_-]{2," + MAX_LOCALE_ID_LENGTH + "}")) {
+            throw error(path, "locale.default must match [a-z0-9_-]{2," + MAX_LOCALE_ID_LENGTH + "}");
+        }
+        String helpUrl = requireString(yaml, path, "messages.help-url");
+
+        final PaperAuthorityMode authority;
+        try {
+            authority = PaperAuthorityMode.parse(requireString(yaml, path, "admission.authority"));
+        } catch (IllegalArgumentException ex) {
+            throw error(path, ex.getMessage());
+        }
+
+        int timeoutSeconds = requireInt(yaml, path, "admission.standalone.handshake-timeout-seconds");
+        if (timeoutSeconds < 1 || timeoutSeconds > MAX_HANDSHAKE_SECONDS) {
+            throw error(path, "admission.standalone.handshake-timeout-seconds must be between 1 and "
+                + MAX_HANDSHAKE_SECONDS);
+        }
+        int challengeWait = requireInt(yaml, path, "admission.standalone.challenge-channel-wait-ticks");
+        int maxWait = timeoutSeconds * 20;
+        if (challengeWait < 1 || challengeWait > maxWait) {
+            throw error(path, "admission.standalone.challenge-channel-wait-ticks must be between 1 and " + maxWait);
+        }
+
+        EnumMap<ClientClassification, ClientAction> actions = new EnumMap<>(ClientClassification.class);
+        actions.put(ClientClassification.BEDROCK, requireAction(yaml, path, "admission.clients.bedrock"));
+        actions.put(ClientClassification.JAVA_VANILLA, requireAction(yaml, path, "admission.clients.vanilla"));
+        actions.put(ClientClassification.JAVA_OPTIFINE, requireAction(yaml, path, "admission.clients.optifine"));
+        actions.put(ClientClassification.JAVA_FABRIC, requireAction(yaml, path, "admission.clients.fabric"));
+        actions.put(ClientClassification.JAVA_UNKNOWN, requireAction(yaml, path, "admission.clients.unknown"));
+
+        BrandRuleMode brandMode = requireEnum(
+            yaml, path, "admission.unknown-brands.mode", BrandRuleMode.class);
+        Set<String> brands = requireStringSet(yaml, path, "admission.unknown-brands.brands");
+
+        final AdmissionPolicy policy;
+        try {
+            policy = new AdmissionPolicy(actions, new UnknownBrandPolicy(brandMode, brands));
+        } catch (IllegalArgumentException ex) {
+            throw error(path, "admission policy invalid: " + ex.getMessage());
+        }
+
+        return new GuardianPaperSettings(
+            schema,
+            admissionEnabled,
+            protectionEnabled,
+            locale,
+            helpUrl,
+            authority,
+            timeoutSeconds,
+            challengeWait,
+            policy
+        );
+    }
+
+    private static ClientAction requireAction(YamlConfiguration yaml, Path path, String key)
+        throws GuardianConfigurationException {
+        return requireEnum(yaml, path, key, ClientAction.class);
+    }
+
+    private static <E extends Enum<E>> E requireEnum(
+        YamlConfiguration yaml, Path path, String key, Class<E> type
+    ) throws GuardianConfigurationException {
+        String raw = requireString(yaml, path, key).trim().toUpperCase(Locale.ROOT);
+        try {
+            return Enum.valueOf(type, raw);
+        } catch (IllegalArgumentException ex) {
+            throw error(path, key + " has unsupported value '" + raw + "'; expected one of "
+                + List.of(type.getEnumConstants()));
+        }
+    }
+
+    private static int requireInt(YamlConfiguration yaml, Path path, String key)
+        throws GuardianConfigurationException {
+        Object value = yaml.get(key);
+        if (!(value instanceof Number number)) {
+            throw error(path, key + " must be an integer");
+        }
+        double raw = number.doubleValue();
+        int result = number.intValue();
+        if (raw != result) {
+            throw error(path, key + " must be an integer");
+        }
+        return result;
+    }
+
+    private static boolean requireBoolean(YamlConfiguration yaml, Path path, String key)
+        throws GuardianConfigurationException {
+        Object value = yaml.get(key);
+        if (!(value instanceof Boolean bool)) {
+            throw error(path, key + " must be true or false");
+        }
+        return bool;
+    }
+
+    private static String requireString(YamlConfiguration yaml, Path path, String key)
+        throws GuardianConfigurationException {
+        Object value = yaml.get(key);
+        if (!(value instanceof String string) || string.isBlank()) {
+            throw error(path, key + " must be a non-blank string");
+        }
+        return string.trim();
+    }
+
+    private static Set<String> requireStringSet(YamlConfiguration yaml, Path path, String key)
+        throws GuardianConfigurationException {
+        Object raw = yaml.get(key);
+        if (!(raw instanceof List<?> list)) {
+            throw error(path, key + " must be a YAML list");
+        }
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (int i = 0; i < list.size(); i++) {
+            Object value = list.get(i);
+            if (!(value instanceof String string) || string.isBlank()) {
+                throw error(path, key + "[" + i + "] must be a non-blank string");
+            }
+            String normalized = string.trim().toLowerCase(Locale.ROOT);
+            if (!result.add(normalized)) {
+                throw error(path, key + " contains duplicate normalized value '" + normalized + "'");
+            }
+        }
+        return Set.copyOf(result);
+    }
+
+    private static GuardianConfigurationException error(Path path, String message) {
+        return error(path, GuardianConfigurationException.Kind.INVALID, message);
+    }
+
+    private static GuardianConfigurationException error(
+        Path path, GuardianConfigurationException.Kind kind, String message
+    ) {
+        return new GuardianConfigurationException(path, kind, message);
+    }
+}

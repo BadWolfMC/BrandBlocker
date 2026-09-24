@@ -1,18 +1,20 @@
 package com.badwolfmc.guardian.paper;
 
-enum PaperAuthorityMode {
+import java.util.Locale;
+
+public enum PaperAuthorityMode {
     STANDALONE,
     VELOCITY;
 
-    static PaperAuthorityMode parse(String value) {
+    public static PaperAuthorityMode parse(String value) {
         if (value == null) {
-            return STANDALONE;
+            throw new IllegalArgumentException("admission.authority is required");
         }
-        return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+        return switch (value.trim().toLowerCase(Locale.ROOT)) {
             case "standalone" -> STANDALONE;
             case "velocity" -> VELOCITY;
             default -> throw new IllegalArgumentException(
-                "phase0.authority must be 'standalone' or 'velocity', not '" + value + "'");
+                "admission.authority must be 'standalone' or 'velocity', not '" + value + "'");
         };
     }
 }

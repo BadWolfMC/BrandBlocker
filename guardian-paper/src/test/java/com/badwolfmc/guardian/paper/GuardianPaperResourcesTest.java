@@ -9,6 +9,8 @@ class GuardianPaperResourcesTest {
     void requiredPluginResourcesArePackaged() {
         ClassLoader loader = GuardianPaperResourcesTest.class.getClassLoader();
         assertNotNull(loader.getResource("plugin.yml"), "plugin.yml must be present");
-        assertNotNull(loader.getResource("config.yml"), "config.yml must be present because saveDefaultConfig() is used");
+        assertNotNull(loader.getResource("config.yml"), "config.yml must be present");
+        assertNotNull(loader.getResource("locales/en_us.properties"),
+            "required fallback locale must be packaged");
     }
 }
