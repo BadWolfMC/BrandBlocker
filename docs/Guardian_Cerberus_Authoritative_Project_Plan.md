@@ -1640,7 +1640,13 @@ The current Phase 1A implementation candidate now establishes the production fou
 - the Phase 0 test-manifest evaluator remains an explicitly transitional integration component until the real manifest/policy phases replace it. Phase 1A does not disguise it as the final mod-policy engine.
 - active implementation bridges and their owning replacement phases/retirement conditions are tracked in `docs/IMPLEMENTATION_BRIDGES.md`; phase closeout MUST review that register so feasibility scaffolding cannot silently become permanent.
 
-The candidate is not considered Phase 1A-complete until the clean build, local Paper/configuration-safety checks, standalone Admission regression, and focused Velocity-network regression in `docs/PHASE_1A_VERIFICATION.md` pass.
+#### Phase 1A completion record — 2026-09-24
+
+Phase 1A is complete. The clean Java 25 build is green with 49 automated tests and no failures/errors/skips. Live operator verification passed for packaged-default generation, malformed config backup/recovery, invalid fallback-locale backup/recovery, unsupported-schema fail-closed behavior, all four Admission/Protection enable combinations, standalone Admission regression, and the focused Velocity/Geyser/Floodgate regression.
+
+The Phase 1A bridge register was reviewed at closeout. BRIDGE-001 through BRIDGE-005 remain intentionally active under their later roadmap owners; Phase 1A completion does not promote feasibility-era behavior into the final contract.
+
+The authoritative implementation baseline handed to Phase 1B is recorded in `docs/PROVENANCE.md`, and the Phase 1B-specific handoff is recorded in `docs/PHASE_1B_HANDOFF.md`.
 
 ### Phase 1B — Guardian Protection / eZProtector successor
 
@@ -1674,6 +1680,17 @@ Do not carry forward:
 - eZProtector's raw config reload behavior.
 
 BadWolfMC does not require punishment commands for the initial Protection migration. A generic structured action/integration mechanism MAY later support direct disconnects or configured console commands where justified, but Phase 1B's required operational behavior is denial feedback, staff notification, and logging.
+
+**Phase 1B implementation contract finalized during implementation:**
+
+- `protection.execution` is a root-scoped player-command denylist and is the execution security boundary.
+- `protection.visibility` supports `ALLOWLIST`/`DENYLIST`, filters Paper's advertised root commands, and uses the same platform-neutral visibility decision for downstream suggestion suppression.
+- `protection.namespaces` supports `ALLOWLIST`/`DENYLIST` over complete normalized `namespace:command` roots.
+- Protection command execution interception is deliberately limited to Paper's player-command path; Guardian does not subscribe to non-player server-command execution events.
+- the packaged namespace default is a conservative denylist of selected Bukkit information aliases rather than eZProtector's blanket colon blocker; administrators may opt into allowlist semantics explicitly.
+- per-command visibility bypass leaves use a deterministic bounded encoded command key.
+- the supported Paper reload lifecycle refreshes online command trees with `Player.updateCommands()` whenever Guardian activates a changed visibility policy; the user-facing `/guardian reload` command remains owned by the later operations phase.
+- the exact Phase 1B YAML and migration semantics are documented in `docs/GUARDIAN_PROTECTION.md` and `docs/EZPROTECTOR_MIGRATION.md`.
 
 ---
 
@@ -1982,7 +1999,6 @@ The following should remain open until the indicated implementation phase rather
 - whether signed official Cerberus release identity is adopted;
 - if adopted, its canonical digest/signature algorithm, metadata format, and release-key lifecycle;
 - exact configuration/locale file split and names;
-- exact Protection rule YAML syntax;
 - exact admission-policy YAML file split/spelling, provided it normalizes to the Section 10 action model;
 - whether named admission profiles support inheritance/composition in v1 or are complete standalone resolved profiles;
 - exact mod-version predicate syntax;

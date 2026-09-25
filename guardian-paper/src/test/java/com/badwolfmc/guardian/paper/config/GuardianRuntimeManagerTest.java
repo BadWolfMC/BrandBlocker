@@ -3,6 +3,7 @@ package com.badwolfmc.guardian.paper.config;
 import com.badwolfmc.guardian.core.BrandRuleMode;
 import com.badwolfmc.guardian.core.ClientAction;
 import com.badwolfmc.guardian.core.ClientClassification;
+import com.badwolfmc.guardian.protection.ProtectionRuleMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,6 +31,11 @@ class GuardianRuntimeManagerTest {
             snapshot.settings().admissionPolicy().configuredAction(ClientClassification.JAVA_FABRIC));
         assertEquals(BrandRuleMode.ALLOWLIST,
             snapshot.settings().admissionPolicy().unknownBrandPolicy().mode());
+        assertTrue(snapshot.settings().protectionPolicy().execution().roots().contains("plugins"));
+        assertEquals(ProtectionRuleMode.DENYLIST, snapshot.settings().protectionPolicy().visibility().mode());
+        assertEquals(ProtectionRuleMode.DENYLIST, snapshot.settings().protectionPolicy().namespaces().mode());
+        assertTrue(snapshot.settings().protectionPolicy().perCommandVisibilityBypass());
+        assertTrue(snapshot.settings().protectionPolicy().notificationsEnabled());
         assertSame(snapshot, manager.current());
     }
 
@@ -115,6 +121,36 @@ class GuardianRuntimeManagerTest {
         assertTrue(ex.getMessage().contains("challenge-channel-wait-ticks"));
         assertSame(original, manager.current());
         assertEquals(invalid, Files.readString(config, StandardCharsets.UTF_8));
+    }
+
+
+    @Test
+    void invalidProtectionReloadLeavesPriorSnapshotActiveAndFileUntouched() throws Exception {
+        GuardianRuntimeManager manager = managerWithDefaults();
+        GuardianRuntimeSnapshot original = manager.loadInitial();
+        Path config = tempDir.resolve("config.yml");
+        String invalid = defaultResource("config.yml")
+            .replace("      - plugins\n      - ver", "      - plugins\n      - /PLUGINS\n      - ver");
+        Files.writeString(config, invalid, StandardCharsets.UTF_8);
+
+        GuardianConfigurationException ex = assertThrows(GuardianConfigurationException.class, manager::reload);
+        assertTrue(ex.getMessage().contains("duplicate normalized command root 'plugins'"));
+        assertSame(original, manager.current());
+        assertEquals(invalid, Files.readString(config, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void namespacedProtectionRulesRejectUnnamespacedRoots() throws Exception {
+        String invalid = defaultResource("config.yml")
+            .replace("      - bukkit:version\n\n  notifications:",
+                "      - bukkit:version\n      - plugins\n\n  notifications:");
+        writeDefaults(invalid);
+
+        GuardianConfigurationException ex = assertThrows(
+            GuardianConfigurationException.class,
+            () -> new GuardianRuntimeManager(tempDir.resolve("config.yml"), tempDir.resolve("locales")).loadInitial()
+        );
+        assertTrue(ex.getMessage().contains("namespaced-command rules must contain full namespace:command roots"));
     }
 
     @Test

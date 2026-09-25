@@ -16,11 +16,17 @@ class ProtectionPermissionsTest {
     }
 
     @Test
-    void dynamicVisibilityPermissionIsBoundedAndNormalized() {
-        String permission = ProtectionPermissions.visibilityBypass("worldedit");
-        assertEquals("guardian.protection.visibility.bypass.worldedit", permission);
-        assertTrue(permission.length() <= ProtectionPermissions.MAX_PERMISSION_LENGTH);
-        assertThrows(IllegalArgumentException.class,
-            () -> ProtectionPermissions.visibilityBypass("WorldEdit:wand /with arguments"));
+    void dynamicVisibilityPermissionIsBoundedAndCanonical() {
+        String normal = ProtectionPermissions.visibilityBypass("worldedit");
+        assertEquals("guardian.protection.visibility.bypass.worldedit", normal);
+        assertTrue(normal.length() <= ProtectionPermissions.MAX_PERMISSION_LENGTH);
+
+        String namespaced = ProtectionPermissions.visibilityBypass("Bukkit:Plugins");
+        assertEquals("guardian.protection.visibility.bypass.bukkit_3aplugins", namespaced);
+        assertTrue(namespaced.length() <= ProtectionPermissions.MAX_PERMISSION_LENGTH);
+
+        String longRoot = ProtectionPermissions.visibilityBypass("a".repeat(96));
+        assertTrue(longRoot.startsWith("guardian.protection.visibility.bypass.sha256-"));
+        assertTrue(longRoot.length() <= ProtectionPermissions.MAX_PERMISSION_LENGTH);
     }
 }

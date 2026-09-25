@@ -4,13 +4,16 @@ Phase 1A establishes Guardian's production foundation and BrandBlocker replaceme
 
 ## Current gate status (2026-09-24)
 
-- Clean Java 25 Gradle build/tests: **PASS** (operator-reported after the Guardian-Velocity test-classpath fix).
-- Phase 1A source/patch integrity checks: **PASS**.
-- Local Paper/configuration-safety smoke tests: **PARTIAL PASS**. First-start generation, prior strict malformed/invalid-file behavior, and Protection foundation activation were operator-confirmed. The startup behavior was then intentionally changed to timestamped backup + safe default/fallback recovery and requires one final smoke check.
-- Focused standalone Admission regression: **PASS** (operator-reported 2026-09-24).
-- Focused Velocity-network regression: **PASS** (operator-reported 2026-09-24).
+**Phase 1A: COMPLETE.**
 
-Active temporary code carried across phase boundaries is tracked in `IMPLEMENTATION_BRIDGES.md`. A green build alone does not close the remaining live verification gate.
+- Clean Java 25 Gradle build/tests: **PASS** — 49 tests, 0 failures/errors/skips in the supplied closeout repository.
+- Phase 1A source/patch integrity checks: **PASS**.
+- Local Paper/configuration-safety smoke tests: **PASS** — fresh defaults, malformed config backup/recovery, invalid fallback-locale backup/recovery, and unsupported-schema fail-closed behavior were operator-confirmed.
+- Independent feature activation: **PASS** — Admission/Protection on/off combinations were operator-confirmed.
+- Focused standalone Admission regression: **PASS**.
+- Focused Velocity/Geyser/Floodgate regression: **PASS**.
+
+Active temporary code carried across phase boundaries remains tracked in `IMPLEMENTATION_BRIDGES.md`; completing Phase 1A does not implicitly promote those bridges into final behavior.
 
 ## Supported-API sanity pass (2026-09-24)
 
@@ -107,15 +110,15 @@ Use this section to record the operator-observed live gate rather than relying o
 
 | Gate | Result | Date / build | Notes |
 |---|---|---|---|
-| Clean Java 25 build/tests | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator-reported; archived test results show 45 tests, 0 failures/errors/skips after the initial-load preservation tests. Re-run after the startup-recovery tests in this closeout adjustment; the expected suite count is 49. |
+| Clean Java 25 build/tests | PASS | 2026-09-24 / `0.1.0-phase1a` | Supplied closeout repository contains 49 tests, 0 failures/errors/skips; operator reports clean build remains green. |
 | Fresh Paper default-file generation | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator-confirmed. |
-| Malformed config startup recovery (backup + default + revalidation) | PENDING | | Supersedes the earlier strict-refusal behavior after operator review. |
-| Invalid fallback locale startup recovery (backup + default + revalidation) | PENDING | | Supersedes the earlier strict-refusal behavior after operator review. |
-| Unsupported schema remains non-recoverable | PENDING | | Automatic downgrade/reset is intentionally prohibited. |
+| Malformed config startup recovery (backup + default + revalidation) | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator-confirmed exact invalid file preserved to UTC timestamped `.bak`, packaged default restored, revalidated, and runtime activated. |
+| Invalid fallback locale startup recovery (backup + default + revalidation) | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator-confirmed invalid fallback preserved to UTC timestamped `.bak`, packaged fallback restored, revalidated, and runtime activated. |
+| Unsupported schema remains non-recoverable | PASS | 2026-09-24 / `0.1.0-phase1a` | `schema-version: 2` correctly disabled Guardian without backup/default replacement. |
 | Admission on / Protection off | PASS | 2026-09-24 / `0.1.0-phase1a` | Confirmed by fresh default startup. |
-| Admission off / Protection on | PENDING | | |
+| Admission off / Protection on | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator-confirmed Protection foundation activates independently with Admission disabled. |
 | Admission on / Protection on | PASS | 2026-09-24 / `0.1.0-phase1a` | Protection foundation activation message operator-confirmed with default Admission retained. |
-| Admission off / Protection off | PENDING | | |
+| Admission off / Protection off | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator-confirmed Guardian runtime can activate with both domains disabled. |
 | Standalone Admission regression | PASS | 2026-09-24 / `0.1.0-phase1a` | Operator reported all requested client connection tests passed. |
 | Exact unknown-brand / near-match regression | PASS | 2026-09-24 / `0.1.0-phase1a` | Included in operator-reported client connection regression. |
 | Fabric cannot be reclassified by unknown-brand rules | PASS | 2026-09-24 / `0.1.0-phase1a` | Included in operator-reported client connection regression. |
@@ -135,4 +138,4 @@ Phase 1A should be considered complete only after:
 4. the focused standalone Admission regression passes; and
 5. the focused BadWolfMC Velocity-network regression passes.
 
-Only then should the project proceed to Phase 1B.
+**Completion result:** all five gates passed on 2026-09-24. Phase 1A is complete and the project may proceed to Phase 1B.

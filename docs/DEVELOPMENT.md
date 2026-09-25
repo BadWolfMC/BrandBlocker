@@ -53,11 +53,11 @@ Get-ChildItem -Directory -Recurse -Filter build |
 The next build will regenerate the caches it needs. Do **not** delete `gradle/wrapper/` unless intentionally regenerating the wrapper.
 
 
-## Phase 1A module boundaries
+## Guardian domain boundaries
 
 `guardian-core` is the platform-neutral Admission domain. `guardian-protection` is the independent platform-neutral Protection domain. Neither module may import Paper, Velocity, Fabric, Geyser/Floodgate, or the other domain merely for convenience. Guardian-Paper is the host/adaptor that composes them. Architecture tests enforce these boundaries.
 
-Phase 1A intentionally does not add Guardian Protection command listeners. If a local test shows Guardian altering command execution, visibility, namespaced commands, or suggestions before Phase 1B, treat that as a regression.
+Phase 1B adds Paper-only Protection adapters in `guardian-paper`. Command execution interception must remain player-only; do not add `ServerCommandEvent`, console/command-block interception, NMS, CraftBukkit implementation access, reflection into server internals, or packet-library hooks. Root visibility and downstream suggestion suppression must continue to call the same platform-neutral visibility decision.
 
 ## Implementation bridge discipline
 

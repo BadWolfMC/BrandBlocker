@@ -26,7 +26,11 @@ public final class GuardianLocaleLoader {
         "admission.manifest-denied",
         "admission.manifest-invalid",
         "admission.client-denied",
-        "admission.configuration-error"
+        "admission.configuration-error",
+        "protection.command-denied",
+        "protection.namespace-denied",
+        "protection.notify.command-denied",
+        "protection.notify.namespace-denied"
     );
 
     public GuardianLocaleCatalog load(Path localesDirectory, String selectedLocale)

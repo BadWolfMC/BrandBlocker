@@ -39,9 +39,9 @@ Live Velocity/Paper/Geyser/Floodgate testing has confirmed the intended network 
 
 For BadWolfMC's Velocity network, Guardian-Velocity is therefore the preferred admission authority; standalone Guardian-Paper remains a supported independent deployment mode.
 
-## Phase 1A status: build-verified implementation candidate
+## Phase 1A status: complete
 
-Phase 1A replaces the feasibility-oriented Paper host with Guardian's production foundation while retaining the live-proven Phase 0 transport boundaries. The candidate now includes:
+Phase 1A replaces the feasibility-oriented Paper host with Guardian's production foundation while retaining the live-proven Phase 0 transport boundaries. The completed slice includes:
 
 - `guardian-core` as the platform-neutral Admission domain;
 - `guardian-protection` as a separate platform-neutral Protection domain;
@@ -70,7 +70,22 @@ admission:
 
 Phase 1A deliberately does **not** implement Guardian Protection command filtering or the later full Cerberus/mod-policy engine. Protection enforcement is Phase 1B; named admission profiles, permission/profile resolution, and full mod policy are later Admission phases.
 
-The Java 25 clean build/test gate and client-connection regressions are green. Before Phase 1B begins, complete the short startup-recovery smoke check recorded in `docs/PHASE_1A_VERIFICATION.md`. Active temporary implementation bridges are tracked in `docs/IMPLEMENTATION_BRIDGES.md` and must be reviewed at each phase boundary.
+Phase 1A is complete: the Java 25 clean build/test gate is green at 49 tests, startup recovery and unsupported-schema behavior were live-verified, all four Admission/Protection enable combinations were exercised, and the standalone plus Velocity/Geyser/Floodgate regressions passed. Active temporary implementation bridges are tracked in `docs/IMPLEMENTATION_BRIDGES.md` and remain owned by their later phases.
+
+## Phase 1B status: implementation candidate
+
+The current source now implements the Phase 1B Guardian Protection candidate while preserving the Phase 1A Admission boundaries:
+
+- platform-neutral command-root/rule/decision/bypass models in `guardian-protection`;
+- player-only Paper command execution denial for configured roots;
+- explicit command-visibility and namespaced-command `ALLOWLIST`/`DENYLIST` modes;
+- shared root visibility decisions for command-tree filtering and downstream suggestion suppression;
+- global, feature-scoped, and optional per-command visibility bypasses under `guardian.protection.*`;
+- permission-gated, locale-backed staff notifications independent from bypass authority;
+- validated Protection configuration integrated into Guardian's immutable runtime snapshot; and
+- supported online command-tree refresh behavior when the active visibility contract changes.
+
+The public administrative command surface remains owned by the later operations phase; Phase 1B does not reintroduce eZProtector's raw reload command behavior. The candidate must still pass the clean Java 25 Gradle gate and the local/live checklist in `docs/PHASE_1B_VERIFICATION.md` before Phase 1B is declared complete.
 
 See:
 
@@ -78,6 +93,10 @@ See:
 - `docs/PHASE_0A_TEST_PLAN.md`
 - `docs/SANITY_REPORT.md`
 - `docs/PHASE_1A_VERIFICATION.md`
+- `docs/PHASE_1B_HANDOFF.md`
+- `docs/PHASE_1B_VERIFICATION.md`
+- `docs/GUARDIAN_PROTECTION.md`
+- `docs/EZPROTECTOR_MIGRATION.md`
 - `docs/PROVENANCE.md`
 - `docs/IMPLEMENTATION_BRIDGES.md`
 - `docs/DEVELOPMENT.md`

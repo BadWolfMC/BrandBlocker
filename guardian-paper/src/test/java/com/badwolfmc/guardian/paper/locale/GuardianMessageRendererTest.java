@@ -6,6 +6,13 @@ import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.paper.PaperAuthorityMode;
 import com.badwolfmc.guardian.paper.config.GuardianPaperSettings;
 import com.badwolfmc.guardian.paper.config.GuardianRuntimeSnapshot;
+import com.badwolfmc.guardian.protection.ProtectionDecision;
+import com.badwolfmc.guardian.protection.ProtectionOutcome;
+import com.badwolfmc.guardian.protection.ProtectionPolicy;
+import com.badwolfmc.guardian.protection.ProtectionReason;
+import com.badwolfmc.guardian.protection.ProtectionRule;
+import com.badwolfmc.guardian.protection.ProtectionRuleMode;
+import com.badwolfmc.guardian.protection.ProtectionSurface;
 import net.kyori.adventure.text.Component;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +26,7 @@ class GuardianMessageRendererTest {
         String attemptedInjection = "<click:run_command:'/op me'>click me</click>";
         GuardianPaperSettings settings = new GuardianPaperSettings(
             1, true, false, "en_us", attemptedInjection,
-            PaperAuthorityMode.STANDALONE, 10, 40, AdmissionPolicy.defaults());
+            PaperAuthorityMode.STANDALONE, 10, 40, AdmissionPolicy.defaults(), ProtectionPolicy.disabled());
         GuardianLocaleCatalog catalog = new GuardianLocaleCatalog(
             "en_us",
             Map.of("admission.cerberus-required", "<red>Need Cerberus</red> <help_url>"),
@@ -31,6 +38,48 @@ class GuardianMessageRendererTest {
             snapshot, DecisionReason.CERBERUS_REQUIRED, ClientClassification.JAVA_FABRIC);
 
         assertNoClickEvents(rendered);
+    }
+
+
+    @Test
+    void protectionPlaceholdersCannotInjectMiniMessageEvents() {
+        String attemptedInjection = "<click:run_command:'/op me'>click me</click>";
+        GuardianPaperSettings settings = new GuardianPaperSettings(
+            1, true, true, "en_us", "https://example.invalid/",
+            PaperAuthorityMode.STANDALONE, 10, 40, AdmissionPolicy.defaults(), ProtectionPolicy.disabled());
+        GuardianLocaleCatalog catalog = new GuardianLocaleCatalog(
+            "en_us",
+            Map.of(
+                "protection.notify.command-denied",
+                "<gray>[Guardian]</gray> <player> tried <command> (<root>)"
+            ),
+            Map.of("protection.notify.command-denied", "fallback")
+        );
+        GuardianRuntimeSnapshot snapshot = new GuardianRuntimeSnapshot(settings, catalog);
+        ProtectionRule rule = ProtectionRule.create(
+            ProtectionSurface.COMMAND_EXECUTION, true, ProtectionRuleMode.DENYLIST, java.util.Set.of("plugins"));
+        ProtectionDecision decision = new ProtectionDecision(
+            ProtectionOutcome.DENY, ProtectionReason.EXECUTION_DENIED,
+            ProtectionSurface.COMMAND_EXECUTION,
+            com.badwolfmc.guardian.protection.CommandRootNormalizer.normalize("plugins"),
+            rule, java.util.Optional.empty());
+
+        Component rendered = new GuardianMessageRenderer().renderProtectionNotification(
+            snapshot, decision, attemptedInjection, attemptedInjection);
+
+        assertNoClickEvents(rendered);
+    }
+
+    @Test
+    void protectionExecutionDenialReasonsHaveLocaleKeyMappings() {
+        assertEquals("protection.command-denied",
+            GuardianMessageRenderer.protectionDenialKey(ProtectionReason.EXECUTION_DENIED));
+        assertEquals("protection.namespace-denied",
+            GuardianMessageRenderer.protectionDenialKey(ProtectionReason.NAMESPACE_DENIED));
+        assertEquals("protection.notify.command-denied",
+            GuardianMessageRenderer.protectionNotificationKey(ProtectionReason.EXECUTION_DENIED));
+        assertEquals("protection.notify.namespace-denied",
+            GuardianMessageRenderer.protectionNotificationKey(ProtectionReason.NAMESPACE_DENIED));
     }
 
     @Test

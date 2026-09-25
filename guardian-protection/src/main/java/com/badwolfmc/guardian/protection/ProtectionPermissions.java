@@ -13,11 +13,12 @@ public final class ProtectionPermissions {
     private ProtectionPermissions() {
     }
 
-    public static String visibilityBypass(String normalizedCommandRoot) {
-        if (normalizedCommandRoot == null || !normalizedCommandRoot.matches("[a-z0-9._-]{1,48}")) {
-            throw new IllegalArgumentException("normalized command root must match [a-z0-9._-]{1,48}");
-        }
-        return checked(VISIBILITY_BYPASS + "." + normalizedCommandRoot);
+    public static String visibilityBypass(String commandRoot) {
+        return visibilityBypass(CommandRootNormalizer.normalize(commandRoot));
+    }
+
+    static String visibilityBypass(CommandRoot commandRoot) {
+        return checked(VISIBILITY_BYPASS + "." + commandRoot.permissionKey());
     }
 
     private static String checked(String permission) {

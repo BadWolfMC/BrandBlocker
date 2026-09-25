@@ -102,15 +102,25 @@ Resolved entries remain here as provenance for decisions that changed during imp
 
 **Regression ownership:** Phase 7 should retain this behavior in release/upgrade tests, but there is no remaining implementation bridge.
 
-## Phase 1A verification state
+## Phase 1A closeout state
 
-As of 2026-09-24:
+As of 2026-09-24, **Phase 1A is complete**.
 
-- **Clean Java 25 Gradle build/tests:** PASS, operator-reported after adding the missing Velocity API test-classpath dependency.
-- **Patch/application integrity:** PASS for the Phase 1A implementation and follow-up dependency fix.
-- **Source hygiene:** the unused `java.util.Map` import in `GuardianConfigLoader` was identified as ordinary dead-import cleanup, not an implementation bridge.
-- **Local Paper/configuration-safety smoke tests:** operator-confirmed for first-start generation, strict malformed-config behavior, invalid fallback locale behavior, and Protection foundation activation. The startup-invalid-file behavior was then intentionally revised to backup-and-recover; that revised behavior requires one final smoke check.
-- **Focused standalone Admission regression:** PASS, operator-reported after the Phase 1A closeout build.
-- **Focused Velocity-network regression:** PASS, operator-reported after the Phase 1A closeout build.
+- **Clean Java 25 Gradle build/tests:** PASS — supplied closeout repository contains 49 tests with 0 failures/errors/skips; operator reports the clean build remains green.
+- **Patch/application integrity:** PASS.
+- **Source hygiene:** PASS; the previously reported unused import was ordinary cleanup rather than an implementation bridge.
+- **Local Paper/configuration safety:** PASS — first-start generation, malformed config backup/recovery, invalid fallback-locale backup/recovery, and unsupported-schema fail-closed behavior were operator-confirmed.
+- **Independent domain activation:** PASS — Admission/Protection on/off combinations were exercised.
+- **Focused standalone Admission regression:** PASS.
+- **Focused Velocity/Geyser/Floodgate regression:** PASS.
 
-Do not begin Phase 1B merely because the build is green if the remaining Phase 1A completion gate has not been exercised.
+The active bridge register was reviewed at closeout. BRIDGE-001 through BRIDGE-005 remain intentionally active and retain their existing later-phase owners and retirement conditions. No Phase 1A completion result promotes those bridges into final public behavior.
+
+Phase 1B may proceed from this baseline. Any temporary Protection implementation introduced during Phase 1B must be added to this register with an owner and retirement condition rather than left as an implicit TODO.
+
+
+## Phase 1B bridge review
+
+The Phase 1B Guardian Protection implementation introduces **no new temporary implementation bridge**. The player-command execution, command-tree visibility, downstream-suggestion suppression, bypass-resolution, notification, configuration, and tree-refresh paths are intended production architecture for the Phase 1B scope.
+
+The package-private Guardian-Paper atomic reload/reconciliation method is a lifecycle seam for the later supported administrative surface, not a raw/replacement reload mechanism and not a temporary compatibility path. The public `/guardian reload` command itself remains deliberately roadmap-owned by the operations phase. BRIDGE-001 through BRIDGE-005 remain unchanged and are outside Phase 1B ownership.

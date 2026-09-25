@@ -6,6 +6,10 @@ import com.badwolfmc.guardian.core.ClientAction;
 import com.badwolfmc.guardian.core.ClientClassification;
 import com.badwolfmc.guardian.core.UnknownBrandPolicy;
 import com.badwolfmc.guardian.paper.PaperAuthorityMode;
+import com.badwolfmc.guardian.protection.ProtectionPolicy;
+import com.badwolfmc.guardian.protection.ProtectionRule;
+import com.badwolfmc.guardian.protection.ProtectionRuleMode;
+import com.badwolfmc.guardian.protection.ProtectionSurface;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -88,6 +92,34 @@ public final class GuardianConfigLoader {
             throw error(path, "admission policy invalid: " + ex.getMessage());
         }
 
+        final ProtectionPolicy protectionPolicy;
+        try {
+            protectionPolicy = new ProtectionPolicy(
+                ProtectionRule.create(
+                    ProtectionSurface.COMMAND_EXECUTION,
+                    requireBoolean(yaml, path, "protection.execution.enabled"),
+                    ProtectionRuleMode.DENYLIST,
+                    requireStringList(yaml, path, "protection.execution.blocked-roots")
+                ),
+                ProtectionRule.create(
+                    ProtectionSurface.COMMAND_VISIBILITY,
+                    requireBoolean(yaml, path, "protection.visibility.enabled"),
+                    requireEnum(yaml, path, "protection.visibility.mode", ProtectionRuleMode.class),
+                    requireStringList(yaml, path, "protection.visibility.roots")
+                ),
+                ProtectionRule.create(
+                    ProtectionSurface.NAMESPACED_COMMAND,
+                    requireBoolean(yaml, path, "protection.namespaces.enabled"),
+                    requireEnum(yaml, path, "protection.namespaces.mode", ProtectionRuleMode.class),
+                    requireStringList(yaml, path, "protection.namespaces.roots")
+                ),
+                requireBoolean(yaml, path, "protection.visibility.per-command-bypass"),
+                requireBoolean(yaml, path, "protection.notifications.enabled")
+            );
+        } catch (IllegalArgumentException ex) {
+            throw error(path, "protection policy invalid: " + ex.getMessage());
+        }
+
         return new GuardianPaperSettings(
             schema,
             admissionEnabled,
@@ -97,7 +129,8 @@ public final class GuardianConfigLoader {
             authority,
             timeoutSeconds,
             challengeWait,
-            policy
+            policy,
+            protectionPolicy
         );
     }
 
@@ -148,6 +181,23 @@ public final class GuardianConfigLoader {
             throw error(path, key + " must be a non-blank string");
         }
         return string.trim();
+    }
+
+    private static List<String> requireStringList(YamlConfiguration yaml, Path path, String key)
+        throws GuardianConfigurationException {
+        Object raw = yaml.get(key);
+        if (!(raw instanceof List<?> list)) {
+            throw error(path, key + " must be a YAML list");
+        }
+        java.util.ArrayList<String> result = new java.util.ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            Object value = list.get(i);
+            if (!(value instanceof String string) || string.isBlank()) {
+                throw error(path, key + "[" + i + "] must be a non-blank string");
+            }
+            result.add(string.trim());
+        }
+        return List.copyOf(result);
     }
 
     private static Set<String> requireStringSet(YamlConfiguration yaml, Path path, String key)

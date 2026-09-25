@@ -41,7 +41,7 @@ public final class GuardianPaperPlugin extends JavaPlugin {
         }
 
         if (snapshot.settings().protectionEnabled()) {
-            protectionRuntime = new PaperProtectionRuntime(this);
+            protectionRuntime = new PaperProtectionRuntime(this, runtimeManager, messageRenderer);
             protectionRuntime.enable();
         } else {
             getLogger().info("Guardian Protection disabled by configuration.");
@@ -65,8 +65,56 @@ public final class GuardianPaperPlugin extends JavaPlugin {
         }
     }
 
+    /**
+     * Atomically activates a validated runtime candidate and reconciles domain adapters.
+     * A future Guardian administrative command may call this without acquiring raw-reload semantics.
+     */
+    synchronized GuardianRuntimeSnapshot reloadRuntime() throws GuardianConfigurationException {
+        GuardianRuntimeSnapshot previous = runtimeManager.current();
+        GuardianRuntimeSnapshot current = runtimeManager.reload();
+        reconcileAdmission(previous, current);
+        reconcileProtection(previous, current);
+        return current;
+    }
+
     GuardianRuntimeManager runtimeManager() {
         return runtimeManager;
+    }
+
+    private void reconcileAdmission(GuardianRuntimeSnapshot previous, GuardianRuntimeSnapshot current) {
+        boolean wasEnabled = previous.settings().admissionEnabled();
+        boolean nowEnabled = current.settings().admissionEnabled();
+        if (wasEnabled == nowEnabled) {
+            return;
+        }
+        if (nowEnabled) {
+            admissionAdapter = new PaperAdmissionAdapter(this, runtimeManager, new GuardianMessageRenderer());
+            admissionAdapter.enable();
+        } else if (admissionAdapter != null) {
+            admissionAdapter.disable();
+            admissionAdapter = null;
+        }
+    }
+
+    private void reconcileProtection(GuardianRuntimeSnapshot previous, GuardianRuntimeSnapshot current) {
+        boolean wasEnabled = previous.settings().protectionEnabled();
+        boolean nowEnabled = current.settings().protectionEnabled();
+        if (!wasEnabled && nowEnabled) {
+            protectionRuntime = new PaperProtectionRuntime(
+                this, runtimeManager, new GuardianMessageRenderer());
+            protectionRuntime.enable();
+            return;
+        }
+        if (wasEnabled && !nowEnabled) {
+            if (protectionRuntime != null) {
+                protectionRuntime.disable();
+                protectionRuntime = null;
+            }
+            return;
+        }
+        if (nowEnabled && protectionRuntime != null) {
+            protectionRuntime.reconfigure(previous, current);
+        }
     }
 
     private GuardianRuntimeSnapshot loadInitialWithRecovery(Path dataDirectory) {

@@ -1,0 +1,13 @@
+package com.badwolfmc.guardian.protection;
+
+public enum ProtectionReason {
+    POLICY_ALLOWED,
+    EXECUTION_DENIED,
+    VISIBILITY_HIDDEN,
+    NAMESPACE_DENIED,
+    GLOBAL_BYPASS,
+    COMMAND_BYPASS,
+    NAMESPACE_BYPASS,
+    VISIBILITY_BYPASS,
+    COMMAND_VISIBILITY_BYPASS
+}

@@ -3,6 +3,8 @@ package com.badwolfmc.guardian.paper.locale;
 import com.badwolfmc.guardian.core.ClientClassification;
 import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.paper.config.GuardianRuntimeSnapshot;
+import com.badwolfmc.guardian.protection.ProtectionDecision;
+import com.badwolfmc.guardian.protection.ProtectionReason;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -24,6 +26,27 @@ public final class GuardianMessageRenderer {
             .build());
     }
 
+    public Component renderProtectionDenial(
+        GuardianRuntimeSnapshot snapshot,
+        ProtectionDecision decision,
+        String command
+    ) {
+        return render(snapshot, protectionDenialKey(decision.reason()), protectionResolver(decision, "", command));
+    }
+
+    public Component renderProtectionNotification(
+        GuardianRuntimeSnapshot snapshot,
+        ProtectionDecision decision,
+        String playerName,
+        String command
+    ) {
+        return render(
+            snapshot,
+            protectionNotificationKey(decision.reason()),
+            protectionResolver(decision, playerName, command)
+        );
+    }
+
     public Component render(GuardianRuntimeSnapshot snapshot, String key, TagResolver resolver) {
         String template = snapshot.localeCatalog().template(key);
         return miniMessage.deserialize(template, resolver);
@@ -42,5 +65,34 @@ public final class GuardianMessageRenderer {
             case CONFIGURATION_ERROR -> "admission.configuration-error";
             default -> "admission.denied";
         };
+    }
+
+    static String protectionDenialKey(ProtectionReason reason) {
+        return switch (reason) {
+            case EXECUTION_DENIED -> "protection.command-denied";
+            case NAMESPACE_DENIED -> "protection.namespace-denied";
+            default -> throw new IllegalArgumentException("Protection reason is not an execution denial: " + reason);
+        };
+    }
+
+    static String protectionNotificationKey(ProtectionReason reason) {
+        return switch (reason) {
+            case EXECUTION_DENIED -> "protection.notify.command-denied";
+            case NAMESPACE_DENIED -> "protection.notify.namespace-denied";
+            default -> throw new IllegalArgumentException("Protection reason has no notification template: " + reason);
+        };
+    }
+
+    private static TagResolver protectionResolver(
+        ProtectionDecision decision,
+        String playerName,
+        String command
+    ) {
+        return TagResolver.builder()
+            .resolver(Placeholder.unparsed("player", playerName))
+            .resolver(Placeholder.unparsed("command", command))
+            .resolver(Placeholder.unparsed("root", decision.root().value()))
+            .resolver(Placeholder.unparsed("reason", decision.reason().name()))
+            .build();
     }
 }

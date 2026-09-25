@@ -5,8 +5,8 @@
 schema-version: 1
 
 features:
-  # Admission and Protection are independent domains. Phase 1A establishes the
-  # Protection boundary; command-protection behavior is implemented in Phase 1B.
+  # Admission and Protection are independent domains. Phase 1B implements
+  # Paper-authoritative Protection without making either domain depend on the other.
   admission:
     enabled: true
   protection:
@@ -48,3 +48,64 @@ admission:
   unknown-brands:
     mode: ALLOWLIST
     brands: []
+
+# Guardian Protection is Paper-authoritative and applies only to commands initiated
+# through Paper's player command path. Console, command-block, and ordinary plugin
+# dispatch are not intercepted by Guardian Protection.
+protection:
+  execution:
+    # Security boundary for configured player command roots. This is intentionally
+    # a deny list: listed roots are cancelled before third-party command execution.
+    enabled: true
+    blocked-roots:
+      - "?"
+      - about
+      - icanhasbukkit
+      - pl
+      - plugins
+      - ver
+      - version
+
+  visibility:
+    # Disclosure/UX policy only; execution rules above remain authoritative.
+    # ALLOWLIST exposes only listed roots. DENYLIST hides listed roots.
+    enabled: true
+    mode: DENYLIST
+    roots:
+      - "?"
+      - about
+      - bukkit:?
+      - bukkit:about
+      - bukkit:help
+      - bukkit:pl
+      - bukkit:plugins
+      - bukkit:ver
+      - bukkit:version
+      - help
+      - icanhasbukkit
+      - pl
+      - plugins
+      - ver
+      - version
+    # Enables guardian.protection.visibility.bypass.<normalized-command-key>.
+    per-command-bypass: true
+
+  namespaces:
+    # Governs direct player invocation of namespace:command roots.
+    # ALLOWLIST denies every namespaced root not explicitly listed.
+    # DENYLIST denies only roots explicitly listed.
+    enabled: true
+    mode: DENYLIST
+    roots:
+      - bukkit:?
+      - bukkit:about
+      - bukkit:help
+      - bukkit:pl
+      - bukkit:plugins
+      - bukkit:ver
+      - bukkit:version
+
+  notifications:
+    # Online staff with guardian.protection.notify receive denial notices.
+    # Notification permission never grants a bypass.
+    enabled: true
