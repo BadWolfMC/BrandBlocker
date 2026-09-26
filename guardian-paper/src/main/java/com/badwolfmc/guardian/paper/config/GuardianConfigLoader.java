@@ -1,5 +1,7 @@
 package com.badwolfmc.guardian.paper.config;
 
+import com.badwolfmc.guardian.protocol.GuardianProtocol;
+
 import com.badwolfmc.guardian.core.AdmissionPolicy;
 import com.badwolfmc.guardian.core.BrandRuleMode;
 import com.badwolfmc.guardian.core.ClientAction;
@@ -24,7 +26,7 @@ import java.util.Set;
 
 public final class GuardianConfigLoader {
     public static final int SCHEMA_VERSION = 1;
-    private static final int MAX_HANDSHAKE_SECONDS = 60;
+    private static final int MAX_HANDSHAKE_SECONDS = (int) (GuardianProtocol.MAX_HANDSHAKE_MILLIS / 1000L);
     private static final int MAX_LOCALE_ID_LENGTH = 32;
 
     public GuardianPaperSettings load(Path path) throws GuardianConfigurationException {

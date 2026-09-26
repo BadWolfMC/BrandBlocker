@@ -100,3 +100,8 @@ The Phase 1B coding pass on 2026-09-24 was explicitly supplied a later Guardian 
 - SHA-256 `08db5a91d42b59a9d7605d670458a10c13904c4052ab82fb84b81cbb7eab5b15`
 
 The supplied eZProtector archives have the same hashes as the Paper and historical-proxy references already recorded above, despite their incremented archive filenames (`ezProtector(4).zip` and `ezProtector-with-old-velocity-module(3).zip`).
+
+
+## Closeout supersession — 2026-09-26
+
+Phase 1B has completed its automated and live verification gates. This file remains as the historical implementation handoff, but it is no longer the current next-phase handoff. Continue with `docs/PHASE_2_HANDOFF.md` and the authoritative project plan.

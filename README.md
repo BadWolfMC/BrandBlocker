@@ -72,9 +72,9 @@ Phase 1A deliberately does **not** implement Guardian Protection command filteri
 
 Phase 1A is complete: the Java 25 clean build/test gate is green at 49 tests, startup recovery and unsupported-schema behavior were live-verified, all four Admission/Protection enable combinations were exercised, and the standalone plus Velocity/Geyser/Floodgate regressions passed. Active temporary implementation bridges are tracked in `docs/IMPLEMENTATION_BRIDGES.md` and remain owned by their later phases.
 
-## Phase 1B status: implementation candidate
+## Phase 1B status: complete
 
-The current source now implements the Phase 1B Guardian Protection candidate while preserving the Phase 1A Admission boundaries:
+Phase 1B implements Guardian Protection while preserving the Phase 1A Admission boundaries:
 
 - platform-neutral command-root/rule/decision/bypass models in `guardian-protection`;
 - player-only Paper command execution denial for configured roots;
@@ -85,7 +85,15 @@ The current source now implements the Phase 1B Guardian Protection candidate whi
 - validated Protection configuration integrated into Guardian's immutable runtime snapshot; and
 - supported online command-tree refresh behavior when the active visibility contract changes.
 
-The public administrative command surface remains owned by the later operations phase; Phase 1B does not reintroduce eZProtector's raw reload command behavior. The candidate must still pass the clean Java 25 Gradle gate and the local/live checklist in `docs/PHASE_1B_VERIFICATION.md` before Phase 1B is declared complete.
+The public administrative command surface remains owned by the later operations phase; Phase 1B does not reintroduce eZProtector's raw reload command behavior. Phase 1B is complete: the operator reports the clean Java 25 / Gradle 9.7.1 gate green with all 73 repository tests passing, and the full local/live verification matrix in `docs/PHASE_1B_VERIFICATION.md` passed from a blank-slate Guardian installation, including all four Admission/Protection enable combinations, player-only execution enforcement, non-player command independence, allowlist/denylist behavior, visibility bypass scope, and notification permission scope.
+
+## Phase 2 status: closeout candidate
+
+Phase 2 replaces the synthetic feasibility manifest with Guardian/Cerberus protocol v1 and a real Fabric Loader-backed canonical manifest while preserving the proven Paper and Velocity transport boundaries. Live verification on 2026-09-26 passed the standalone and Velocity-authoritative happy paths plus distinct missing-Cerberus, timeout, unsupported-protocol, and malformed-response outcomes. A representative BadWolfMC Fabric client produced a 166-entry canonical manifest with top-level, built-in, nested, and multi-level containment relationships and no transmitted filesystem paths.
+
+The closeout hardening revision tightens Fabric mod-ID/protocol-version bounds and expands the automated inventory from 73 to 85 tests. Run the final clean Java 25 / Gradle 9.7.1 gate in `docs/PHASE_2_VERIFICATION.md` after applying that revision. If it remains green, Phase 2 is complete with no additional live-client matrix required and Phase 3 may proceed from `docs/PHASE_3_HANDOFF.md`.
+
+BRIDGE-001 and BRIDGE-002 are retired. BRIDGE-003 through BRIDGE-005 remain intentionally owned by later phases.
 
 See:
 
@@ -95,6 +103,10 @@ See:
 - `docs/PHASE_1A_VERIFICATION.md`
 - `docs/PHASE_1B_HANDOFF.md`
 - `docs/PHASE_1B_VERIFICATION.md`
+- `docs/PHASE_2_HANDOFF.md`
+- `docs/PHASE_2_IMPLEMENTATION.md`
+- `docs/PHASE_2_VERIFICATION.md`
+- `docs/PHASE_3_HANDOFF.md`
 - `docs/GUARDIAN_PROTECTION.md`
 - `docs/EZPROTECTOR_MIGRATION.md`
 - `docs/PROVENANCE.md`

@@ -125,6 +125,20 @@ After Protection testing, repeat the focused live checks already recorded in `PH
 
 No Protection rule should affect configuration-stage Admission, Cerberus, proxy assertions, or Bedrock classification.
 
-## Completion record
+## Completion record — 2026-09-26
 
-Record the exact JAR/build identifier, test totals, and operator-observed PASS/FAIL results here when the live gate is performed. Do not mark Phase 1B complete solely from source review or a patch applying cleanly.
+Phase 1B is complete. The closeout repository is project version `0.1.0-phase1b` and contains 73 automated tests. The operator reports the clean Java 25 / Gradle 9.7.1 build/test gate green with all 73 tests passing; the terminal log was not retained in the closeout archive.
+
+Live verification was performed from a blank-slate Guardian installation and all requested Phase 1B checks passed, including additional exploratory checks beyond this document:
+
+- all four Admission/Protection enable combinations behaved independently in game;
+- player-run blocked roots were denied while console, command blocks, and plugin-dispatched commands continued to function, including blocked and namespaced command cases;
+- execution, visibility, and namespaced-command policies behaved as expected in both allowlist and denylist modes where applicable;
+- hidden commands and downstream suggestions were restored only by the applicable `guardian.protection.visibility.bypass.<command>` or broader Guardian visibility/global bypass;
+- only recipients holding `guardian.protection.notify` received Protection staff notifications;
+- Protection bypass authority did not implicitly grant notification authority; and
+- Phase 1A Admission behavior remained independent from Protection.
+
+The closeout source archive supplied on 2026-09-26 is `Guardian.zip`, SHA-256 `caf98f98f1601939222b48ce497b6f0139755f1bec5b048f70d654299c6586e2`.
+
+No new Phase 1B implementation bridge remains open. BRIDGE-001 through BRIDGE-005 retain their existing later-phase owners. Phase 2 may proceed from this baseline.

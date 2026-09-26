@@ -69,3 +69,38 @@ The exact eZProtector references supplied to this pass are:
 - `ezProtector-with-old-velocity-module(3).zip` — SHA-256 `cfd01fab6d2ef7c14c2adb7eb74bcb8b988f0cd54a3e0b70f7a0c66fd67a4624`; byte-identical to the previously recorded historical proxy reference hash
 
 Phase 1B uses those archives for behavior/provenance review only. The Guardian Protection implementation is written against Guardian's domain boundaries and supported Paper APIs; no later AGPL continuation source is consulted or incorporated.
+
+
+## Phase 1B closeout baseline — 2026-09-26
+
+The repository accepted for Phase 1B closeout and Phase 2 handoff is:
+
+- archive: `Guardian.zip`
+- SHA-256: `caf98f98f1601939222b48ce497b6f0139755f1bec5b048f70d654299c6586e2`
+- project version: `0.1.0-phase1b`
+- repository test inventory: 73 tests
+- operator-reported automated result: clean Java 25 / Gradle 9.7.1 gate PASS; all 73 tests PASS
+- operator live result: full Phase 1B verification matrix PASS from a blank-slate Guardian installation
+
+The closeout archive does not retain the terminal build log; the automated result above is therefore recorded as operator-confirmed rather than independently reconstructed from an archived report. The source tree and live verification establish Phase 1B as complete for project handoff.
+
+This is the authoritative implementation baseline for Phase 2 unless a later supplied repository explicitly supersedes it.
+
+## Phase 2 implementation candidate — 2026-09-26
+
+Phase 2 replaces the Phase 0 synthetic Cerberus manifest and response validator with Guardian protocol v1 and a Fabric Loader-backed canonical manifest. Enumeration uses supported Fabric Loader APIs (`FabricLoader.getAllMods`, `ModContainer.getContainingMod`, origin metadata) and deliberately serializes no filesystem paths. The standalone Paper hybrid and Velocity-authoritative transport boundaries are retained.
+
+BRIDGE-001 and BRIDGE-002 are retired in source by this candidate. Final Phase 2 closeout still requires the Java 25 / Gradle 9.7.1 clean gate plus live standalone Paper and Velocity-authoritative verification with representative real Fabric manifests.
+
+## Phase 2 closeout hardening source — 2026-09-26
+
+The final Phase 2 hardening/closeout pass is based on the exact repository archive supplied after successful live protocol-v1 testing:
+
+- archive: `Guardian(4).zip`
+- SHA-256: `3be945537ba459d6f1169305ac87760317d6e5704195f607ee4a129d3212430d`
+- starting project version: `0.1.0-phase1b`
+- supplied archived automated result: 73 tests, 0 failures/errors/skips
+- operator result before this closeout patch: Java 25 / Gradle 9.7.1 build PASS
+- operator live result: standalone Paper and Velocity-authoritative protocol-v1 matrices PASS with a representative 166-entry real Fabric manifest
+
+The closeout hardening patch changes the project version to `0.1.0-phase2`, tightens Fabric mod-ID and unsigned-16-bit protocol-version representation bounds, expands adversarial tests to 85 total, and records the Phase 2 verification/Phase 3 handoff state. The final Java 25 clean gate for this exact patched source remains the operator confirmation required to promote the candidate to the Phase 2 closeout baseline.

@@ -3,6 +3,7 @@ package com.badwolfmc.guardian.velocity;
 import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
+import com.badwolfmc.guardian.protocol.Presence;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -23,9 +24,17 @@ class VelocityAdmissionSessionTest {
     void duplicatePresenceMustAgreeOnProtocol() {
         VelocityAdmissionSession session = new VelocityAdmissionSession(sessionId());
 
-        assertTrue(session.recordPresence(1));
-        assertTrue(session.recordPresence(1));
-        assertFalse(session.recordPresence(99));
+        assertTrue(session.recordPresence(new Presence(1, 1, GuardianProtocol.KNOWN_CAPABILITIES, "test")));
+        assertTrue(session.recordPresence(new Presence(1, 1, GuardianProtocol.KNOWN_CAPABILITIES, "test")));
+        assertFalse(session.recordPresence(new Presence(99, 99, GuardianProtocol.KNOWN_CAPABILITIES, "test")));
+    }
+
+    @Test
+    void onlyOneResponseCanBeClaimedPerChallenge() {
+        VelocityAdmissionSession session = new VelocityAdmissionSession(sessionId());
+
+        assertTrue(session.tryMarkResponseReceived());
+        assertFalse(session.tryMarkResponseReceived());
     }
 
     @Test

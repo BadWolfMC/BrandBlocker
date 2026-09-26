@@ -7,7 +7,7 @@ import com.badwolfmc.guardian.core.ClientClassification;
 import com.badwolfmc.guardian.core.DecisionOutcome;
 import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.core.GuardianDecision;
-import com.badwolfmc.guardian.core.Phase0ResponseValidator;
+import com.badwolfmc.guardian.core.ProtocolV1ResponseValidator;
 import com.badwolfmc.guardian.core.ProxyAdmissionValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.ConnectionOrigin;
@@ -55,7 +55,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Guardian-Paper Admission adapter preserving the Phase 0 proven transport boundaries.
  *
- * <p>In standalone authority mode it preserves the Phase 0A hybrid: CONFIGURATION handles brand
+ * <p>In standalone authority mode it preserves the proven hybrid transport: CONFIGURATION handles brand
  * and Cerberus presence/protocol, while compatible Fabric clients complete the nonce exchange in
  * immediate quarantined PLAY. In Velocity authority mode Paper does not re-attest the client; it
  * accepts only a short-lived infrastructure-authenticated admission assertion from
@@ -242,7 +242,7 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
             + ", classification=" + classification
             + ", action=" + action
             + ", cerberusPresent=" + session.cerberusPresent()
-            + ", cerberusProtocol=" + session.cerberusProtocol());
+            + ", cerberusPresence=" + session.cerberusPresence());
 
         if (action == ClientAction.ALLOW) {
             session.decide(GuardianDecision.allow(allowReason(classification),
@@ -269,7 +269,7 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
         }
 
         // Paper's supported CONFIGURATION send path has the channel-registration limitation proven
-        // in Phase 0A. Only the nonce challenge/response moves into bounded quarantined PLAY.
+        // during feasibility testing. Only the nonce challenge/response moves into bounded quarantined PLAY.
         session.requirePlayHandshake();
     }
 
@@ -543,21 +543,22 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
             return;
         }
 
-        if (!session.recordPresence(presence.protocolVersion())) {
+        if (!session.recordPresence(presence)) {
             session.recordConfigurationPresenceFailure(GuardianDecision.deny(
                 DecisionReason.MANIFEST_INVALID, "conflicting duplicate Cerberus presence"));
             return;
         }
 
         plugin.getLogger().info(() -> "Guardian Cerberus CONFIGURATION presence from " + displayName(connection)
-            + ": protocol=" + presence.protocolVersion()
+            + ": protocol=" + presence.minProtocolVersion() + ".." + presence.maxProtocolVersion()
             + ", brand=" + String.valueOf(connection.getClientBrandName()));
 
-        if (presence.protocolVersion() != GuardianProtocol.VERSION) {
+        if (!presence.supports(GuardianProtocol.VERSION) || (presence.capabilities() & GuardianProtocol.REQUIRED_CAPABILITIES) != GuardianProtocol.REQUIRED_CAPABILITIES) {
             session.recordConfigurationPresenceFailure(GuardianDecision.deny(
                 DecisionReason.CERBERUS_PROTOCOL_UNSUPPORTED,
-                "Cerberus announced protocol " + presence.protocolVersion()
-                    + ", Guardian supports " + GuardianProtocol.VERSION));
+                "Cerberus announced protocol range " + presence.minProtocolVersion() + ".." + presence.maxProtocolVersion()
+                    + " with capabilities 0x" + Long.toHexString(presence.capabilities())
+                    + "; Guardian requires protocol " + GuardianProtocol.VERSION + " capabilities 0x" + Long.toHexString(GuardianProtocol.REQUIRED_CAPABILITIES)));
         }
     }
 
@@ -576,14 +577,15 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
         }
 
         plugin.getLogger().info(() -> "Guardian Cerberus PLAY presence from " + player.getName()
-            + ": protocol=" + presence.protocolVersion()
+            + ": protocol=" + presence.minProtocolVersion() + ".." + presence.maxProtocolVersion()
             + ", listeningChannels=" + player.getListeningPluginChannels());
 
-        if (presence.protocolVersion() != GuardianProtocol.VERSION) {
+        if (!presence.supports(GuardianProtocol.VERSION) || (presence.capabilities() & GuardianProtocol.REQUIRED_CAPABILITIES) != GuardianProtocol.REQUIRED_CAPABILITIES) {
             finishPlayDecision(player, session, GuardianDecision.deny(
                 DecisionReason.CERBERUS_PROTOCOL_UNSUPPORTED,
-                "Cerberus announced protocol " + presence.protocolVersion()
-                    + ", Guardian supports " + GuardianProtocol.VERSION));
+                "Cerberus announced protocol range " + presence.minProtocolVersion() + ".." + presence.maxProtocolVersion()
+                    + " with capabilities 0x" + Long.toHexString(presence.capabilities())
+                    + "; Guardian requires protocol " + GuardianProtocol.VERSION + " capabilities 0x" + Long.toHexString(GuardianProtocol.REQUIRED_CAPABILITIES)));
             return;
         }
 
@@ -606,7 +608,7 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
             return null;
         }
 
-        if (!session.recordPresence(presence.protocolVersion())) {
+        if (!session.recordPresence(presence)) {
             session.decide(GuardianDecision.deny(DecisionReason.MANIFEST_INVALID,
                 "conflicting duplicate Cerberus presence"));
             return null;
@@ -658,7 +660,7 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
             player.sendPluginMessage(
                 plugin,
                 GuardianProtocol.CHALLENGE_CHANNEL,
-                ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce))
+                ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, GuardianProtocol.REQUIRED_CAPABILITIES, nonce))
             );
             plugin.getLogger().info(() -> "Guardian PLAY challenge sent to " + player.getName()
                 + "; listeningChannels=" + player.getListeningPluginChannels());
@@ -670,9 +672,15 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
     }
 
     private void handlePlayResponse(Player player, AdmissionSession session, byte[] message) {
-        if (!session.challengeSent() || session.decision() != null) {
+        if (!session.challengeSent()) {
+            finishPlayDecision(player, session, GuardianDecision.deny(DecisionReason.MANIFEST_INVALID, "Cerberus response arrived before Guardian challenge"));
             return;
         }
+        if (!session.tryMarkResponseReceived()) {
+            finishPlayDecision(player, session, GuardianDecision.deny(DecisionReason.MANIFEST_INVALID, "duplicate Cerberus response"));
+            return;
+        }
+        if (session.decision() != null) return;
         if (message.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {
             finishPlayDecision(player, session, GuardianDecision.deny(
                 DecisionReason.MANIFEST_INVALID, "PLAY response exceeds Guardian protocol limit"));
@@ -689,7 +697,7 @@ final class PaperAdmissionAdapter implements Listener, PluginMessageListener {
         }
 
         session.response().complete(response);
-        GuardianDecision decision = Phase0ResponseValidator.validate(session.nonce(), response);
+        GuardianDecision decision = ProtocolV1ResponseValidator.validate(session.nonce(), response);
         finishPlayDecision(player, session, decision);
     }
 

@@ -5,7 +5,7 @@ import com.badwolfmc.cerberus.network.PresencePayload;
 import com.badwolfmc.cerberus.network.ResponsePayload;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
-import com.badwolfmc.guardian.protocol.ManifestEntry;
+import com.badwolfmc.guardian.protocol.Manifest;
 import com.badwolfmc.guardian.protocol.Presence;
 import com.badwolfmc.guardian.protocol.ProtocolCodec;
 import com.badwolfmc.guardian.protocol.ProtocolException;
@@ -22,19 +22,17 @@ import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
+import com.badwolfmc.cerberus.manifest.FabricManifestCollector;
 
 public final class CerberusClient implements ClientModInitializer {
-    private static final Logger LOGGER = LoggerFactory.getLogger("Cerberus/Phase0A");
+    private static final Logger LOGGER = LoggerFactory.getLogger("Cerberus");
 
     @Override
     public void onInitializeClient() {
         registerPayloadTypes();
         registerConfigurationTransport();
         registerPlayTransport();
-        LOGGER.info("Cerberus Phase 0A initialized. CONFIGURATION presence + PLAY challenge/response fallback. "
-            + "Diagnostic switches: deny, protocol, suppressResponse, malformed.");
+        LOGGER.info("Cerberus initialized with Guardian protocol v1 manifest reporting. Diagnostic switches use guardian.cerberus.dev.*.");
     }
 
     private static void registerPayloadTypes() {
@@ -59,7 +57,7 @@ public final class CerberusClient implements ClientModInitializer {
             try {
                 boolean canSendPresence = ClientConfigurationNetworking.canSend(PresencePayload.TYPE);
                 boolean canSendResponse = ClientConfigurationNetworking.canSend(ResponsePayload.TYPE);
-                LOGGER.info("Guardian Phase 0A CONFIGURATION START: presenceSendable={}, responseSendable={}, challengeReceivable={}",
+                LOGGER.info("Guardian CONFIGURATION START: presenceSendable={}, responseSendable={}, challengeReceivable={}",
                     canSendPresence,
                     canSendResponse,
                     ClientConfigurationNetworking.getReceived().contains(ChallengePayload.TYPE.id()));
@@ -71,7 +69,7 @@ public final class CerberusClient implements ClientModInitializer {
 
                 int protocol = selectedProtocol();
                 ClientConfigurationNetworking.send(
-                    new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol)))
+                    new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol, protocol, GuardianProtocol.KNOWN_CAPABILITIES, cerberusVersion())))
                 );
                 LOGGER.info("Attempted Guardian CONFIGURATION presence with protocol {} (serverAdvertised={}).",
                     protocol, canSendPresence);
@@ -89,7 +87,7 @@ public final class CerberusClient implements ClientModInitializer {
             try {
                 boolean canSendPresence = ClientPlayNetworking.canSend(PresencePayload.TYPE);
                 boolean canSendResponse = ClientPlayNetworking.canSend(ResponsePayload.TYPE);
-                LOGGER.info("Guardian Phase 0A PLAY JOIN: presenceSendable={}, responseSendable={}, challengeReceivable={}",
+                LOGGER.info("Guardian PLAY JOIN: presenceSendable={}, responseSendable={}, challengeReceivable={}",
                     canSendPresence,
                     canSendResponse,
                     ClientPlayNetworking.getReceived().contains(ChallengePayload.TYPE.id()));
@@ -100,7 +98,7 @@ public final class CerberusClient implements ClientModInitializer {
                 }
 
                 int protocol = selectedProtocol();
-                sender.sendPacket(new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol))));
+                sender.sendPacket(new PresencePayload(ProtocolCodec.encodePresence(new Presence(protocol, protocol, GuardianProtocol.KNOWN_CAPABILITIES, cerberusVersion()))));
                 LOGGER.info("Attempted Guardian PLAY presence with protocol {} (serverAdvertised={}).",
                     protocol, canSendPresence);
             } catch (RuntimeException ex) {
@@ -117,11 +115,11 @@ public final class CerberusClient implements ClientModInitializer {
             // CONFIGURATION START presence can arrive before a backend connection is in flight and
             // therefore before Velocity exposes plugin messages to plugins. Re-announcing here makes
             // the distinct CERBERUS_REQUIRED vs CERBERUS_TIMEOUT states robust without changing the
-            // standalone Paper Phase 0A fallback.
+            // standalone Paper PLAY fallback.
             int responseProtocol = selectedProtocol();
-            sender.sendPacket(new PresencePayload(ProtocolCodec.encodePresence(new Presence(responseProtocol))));
+            sender.sendPacket(new PresencePayload(ProtocolCodec.encodePresence(new Presence(responseProtocol, responseProtocol, GuardianProtocol.KNOWN_CAPABILITIES, cerberusVersion()))));
 
-            if (Boolean.getBoolean("cerberus.phase0a.suppressResponse")) {
+            if (Boolean.getBoolean("guardian.cerberus.dev.suppressResponse")) {
                 LOGGER.info(
                     "Received Guardian {} challenge; re-announced presence then deliberately suppressed "
                         + "the response for timeout testing.",
@@ -130,43 +128,36 @@ public final class CerberusClient implements ClientModInitializer {
                 return;
             }
 
-            if (Boolean.getBoolean("cerberus.phase0a.malformed")) {
+            if (Boolean.getBoolean("guardian.cerberus.dev.malformedResponse")) {
                 sender.sendPacket(new ResponsePayload(new byte[] {0x00}));
                 LOGGER.info("Sent deliberately malformed Guardian {} response.", phase);
                 return;
             }
 
-            List<ManifestEntry> manifest = buildTestManifest();
-            Response response = new Response(responseProtocol, challenge.nonce(), manifest);
+            if (challenge.protocolVersion() != GuardianProtocol.VERSION || (GuardianProtocol.KNOWN_CAPABILITIES & challenge.requiredCapabilities()) != challenge.requiredCapabilities()) {
+                LOGGER.warn("Guardian {} challenge requested unsupported protocol/capabilities; no response will be sent.", phase);
+                return;
+            }
+            Manifest manifest = FabricManifestCollector.collect();
+            if (Boolean.getBoolean("guardian.cerberus.dev.logManifest")) {
+                LOGGER.info("Cerberus sanitized canonical manifest: minecraft={}, loader={}, cerberus={}, entries={}",
+                    manifest.minecraftVersion(), manifest.fabricLoaderVersion(), manifest.cerberusVersion(), manifest.entries());
+            }
+            Response response = new Response(responseProtocol, GuardianProtocol.KNOWN_CAPABILITIES, challenge.nonce(), manifest);
             sender.sendPacket(new ResponsePayload(ProtocolCodec.encodeResponse(response)));
-            LOGGER.info("Responded to Guardian {} challenge with protocol {} and {} test manifest entries.",
-                phase, responseProtocol, manifest.size());
+            LOGGER.info("Responded to Guardian {} challenge with protocol {} and {} canonical manifest entries.",
+                phase, responseProtocol, manifest.entries().size());
         } catch (ProtocolException | RuntimeException ex) {
             LOGGER.warn("Ignoring invalid Guardian {} challenge", phase, ex);
         }
     }
 
     private static int selectedProtocol() {
-        return Integer.getInteger("cerberus.phase0a.protocol", GuardianProtocol.VERSION);
+        return Integer.getInteger("guardian.cerberus.dev.protocol", GuardianProtocol.VERSION);
     }
 
-    private static List<ManifestEntry> buildTestManifest() {
-        FabricLoader loader = FabricLoader.getInstance();
-        List<ManifestEntry> manifest = new ArrayList<>();
-        manifest.add(new ManifestEntry("cerberus", versionOf(loader, "cerberus")));
-        manifest.add(new ManifestEntry("fabricloader", versionOf(loader, "fabricloader")));
-        manifest.add(new ManifestEntry("minecraft", versionOf(loader, "minecraft")));
-
-        if (Boolean.getBoolean("cerberus.phase0a.deny")) {
-            manifest.add(new ManifestEntry(GuardianProtocol.PHASE0_DENY_MOD_ID, "1"));
-        }
-        return List.copyOf(manifest);
-    }
-
-    private static String versionOf(FabricLoader loader, String modId) {
-        return loader.getModContainer(modId)
-            .map(ModContainer::getMetadata)
-            .map(metadata -> metadata.getVersion().getFriendlyString())
-            .orElse("unknown");
+    private static String cerberusVersion() {
+        return FabricLoader.getInstance().getModContainer("cerberus")
+            .map(ModContainer::getMetadata).map(m -> m.getVersion().getFriendlyString()).orElse("unknown");
     }
 }

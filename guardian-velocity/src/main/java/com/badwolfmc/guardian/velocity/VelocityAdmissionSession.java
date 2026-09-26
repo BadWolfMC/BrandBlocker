@@ -4,6 +4,7 @@ import com.badwolfmc.guardian.core.ClientClassification;
 import com.badwolfmc.guardian.core.DecisionOutcome;
 import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
+import com.badwolfmc.guardian.protocol.Presence;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -14,9 +15,10 @@ final class VelocityAdmissionSession {
     private final AtomicReference<GuardianDecision> decision = new AtomicReference<>();
     private final AtomicReference<ClientClassification> classification = new AtomicReference<>();
     private final AtomicBoolean challengeSent = new AtomicBoolean();
+    private final AtomicBoolean responseReceived = new AtomicBoolean();
     private final byte[] proxySessionId;
     private volatile byte[] nonce;
-    private volatile Integer cerberusProtocol;
+    private volatile Presence cerberusPresence;
 
     VelocityAdmissionSession(byte[] proxySessionId) {
         if (proxySessionId == null || proxySessionId.length != GuardianProtocol.PROXY_SESSION_ID_BYTES) {
@@ -50,21 +52,16 @@ final class VelocityAdmissionSession {
         classification.compareAndSet(null, value);
     }
 
-    Integer cerberusProtocol() {
-        return cerberusProtocol;
+    Presence cerberusPresence() { return cerberusPresence; }
+
+    synchronized boolean recordPresence(Presence presence) {
+        if (cerberusPresence == null) { cerberusPresence = presence; return true; }
+        return java.util.Objects.equals(cerberusPresence, presence);
     }
 
-    synchronized boolean recordPresence(int protocolVersion) {
-        if (cerberusProtocol == null) {
-            cerberusProtocol = protocolVersion;
-            return true;
-        }
-        return cerberusProtocol == protocolVersion;
-    }
+    boolean cerberusPresent() { return cerberusPresence != null; }
 
-    boolean cerberusPresent() {
-        return cerberusProtocol != null;
-    }
+    boolean tryMarkResponseReceived() { return responseReceived.compareAndSet(false, true); }
 
     boolean challengeSent() {
         return challengeSent.get();

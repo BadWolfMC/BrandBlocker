@@ -5,6 +5,7 @@ import com.badwolfmc.guardian.core.GuardianDecision;
 import com.badwolfmc.guardian.paper.config.GuardianRuntimeSnapshot;
 import com.badwolfmc.guardian.protocol.ProxyAdmissionAssertion;
 import com.badwolfmc.guardian.protocol.Response;
+import com.badwolfmc.guardian.protocol.Presence;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -17,11 +18,12 @@ final class AdmissionSession {
     private final CompletableFuture<Response> response = new CompletableFuture<>();
     private final AtomicReference<GuardianDecision> decision = new AtomicReference<>();
     private final AtomicBoolean challengeSent = new AtomicBoolean();
+    private final AtomicBoolean responseReceived = new AtomicBoolean();
     private final AtomicReference<ProxyAdmissionAssertion> proxyAdmission = new AtomicReference<>();
     private final AtomicReference<GuardianDecision> configurationPresenceFailure = new AtomicReference<>();
     private volatile byte[] nonce;
     private volatile boolean cerberusPresent;
-    private volatile Integer cerberusProtocol;
+    private volatile Presence cerberusPresence;
     private volatile boolean playHandshakeRequired;
     private volatile boolean quarantined;
     private volatile ClientClassification classification;
@@ -63,18 +65,14 @@ final class AdmissionSession {
         return cerberusPresent;
     }
 
-    Integer cerberusProtocol() {
-        return cerberusProtocol;
+    Presence cerberusPresence() { return cerberusPresence; }
+
+    synchronized boolean recordPresence(Presence presence) {
+        if (!cerberusPresent) { cerberusPresence = presence; cerberusPresent = true; return true; }
+        return java.util.Objects.equals(cerberusPresence, presence);
     }
 
-    synchronized boolean recordPresence(int protocolVersion) {
-        if (!cerberusPresent) {
-            cerberusProtocol = protocolVersion;
-            cerberusPresent = true;
-            return true;
-        }
-        return cerberusProtocol != null && cerberusProtocol == protocolVersion;
-    }
+    boolean tryMarkResponseReceived() { return responseReceived.compareAndSet(false, true); }
 
     boolean challengeSent() {
         return challengeSent.get();

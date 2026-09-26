@@ -19,38 +19,6 @@ Every active bridge must identify the source locations, the reason it exists, th
 
 ## Active bridges
 
-### BRIDGE-001 — Phase 0 response validator and test-manifest evaluator
-
-**Source:**
-
-- `guardian-core/.../Phase0ResponseValidator.java`
-- `guardian-core/.../Phase0ManifestEvaluator.java`
-- `guardian-protocol/.../GuardianProtocol.java` (`PHASE0_DENY_MOD_ID`)
-- Paper and Velocity Admission adapters that currently invoke `Phase0ResponseValidator`
-
-**Why it exists:** Phase 0 needed deterministic `CERBERUS_VERIFIED`, `MANIFEST_DENIED`, protocol-mismatch, nonce-mismatch, malformed-response, and timeout outcomes before the real manifest/policy engine existed. Phase 1A deliberately retained that proven transport boundary rather than replacing working networking with speculative later-phase code.
-
-**Owner:** Phase 2 for the stable protocol/manifest validation path; Phase 3 for real manifest policy evaluation.
-
-**Retirement condition:** Production Admission no longer depends on `Phase0ResponseValidator`, `Phase0ManifestEvaluator`, or the synthetic `guardian-phase0a-deny` manifest entry. Equivalent failure distinctions remain covered by production tests.
-
-### BRIDGE-002 — Cerberus Phase 0 manifest and JVM diagnostic switches
-
-**Source:**
-
-- `cerberus-fabric/.../CerberusClient.java`
-- `cerberus-fabric/src/main/resources/fabric.mod.json`
-- `cerberus.phase0a.protocol`
-- `cerberus.phase0a.deny`
-- `cerberus.phase0a.suppressResponse`
-- `cerberus.phase0a.malformed`
-
-**Why it exists:** The current client intentionally reports only the small feasibility manifest and exposes test switches used to prove distinct admission outcomes. It is not yet the final Cerberus inventory implementation.
-
-**Owner:** Phase 2.
-
-**Retirement condition:** Cerberus enumerates the contract-defined Fabric Loader manifest, reports parent/contained relationships and required metadata, follows stable protocol/capability negotiation, and any retained diagnostics are renamed/documented as deliberate development tooling rather than `phase0a` behavior. The Fabric metadata no longer describes the client as a Phase 0A feasibility spike.
-
 ### BRIDGE-003 — Phase 0B proxy assertion secret provisioning
 
 **Source:**
@@ -92,6 +60,19 @@ Every active bridge must identify the source locations, the reason it exists, th
 
 ## Resolved bridges
 
+### BRIDGE-001 — Phase 0 response validator and test-manifest evaluator
+
+**Resolution:** Phase 2 replaced `Phase0ResponseValidator`, `Phase0ManifestEvaluator`, and the synthetic deny-mod entry with protocol-v1 negotiation, canonical manifest structural validation, nonce binding, and real Fabric Loader manifest input. `MANIFEST_DENIED` remains reserved for the Phase 3 policy engine rather than being synthesized in Phase 2.
+
+**Resolved in:** Phase 2 implementation candidate, 2026-09-26.
+
+### BRIDGE-002 — Cerberus Phase 0 manifest and JVM diagnostic switches
+
+**Resolution:** Cerberus now enumerates Loader-known mods, preserves containment relationships, reports bounded environment/release metadata and privacy-safe origin kinds, and speaks protocol v1. Feasibility-era `cerberus.phase0a.*` switches and Fabric metadata were removed; retained diagnostics use the explicit `guardian.cerberus.dev.*` namespace.
+
+**Resolved in:** Phase 2 implementation candidate, 2026-09-26.
+
+
 Resolved entries remain here as provenance for decisions that changed during implementation. They are no longer counted as active implementation debt.
 
 ### BRIDGE-006 — Initial-startup invalid-file recovery
@@ -124,3 +105,18 @@ Phase 1B may proceed from this baseline. Any temporary Protection implementation
 The Phase 1B Guardian Protection implementation introduces **no new temporary implementation bridge**. The player-command execution, command-tree visibility, downstream-suggestion suppression, bypass-resolution, notification, configuration, and tree-refresh paths are intended production architecture for the Phase 1B scope.
 
 The package-private Guardian-Paper atomic reload/reconciliation method is a lifecycle seam for the later supported administrative surface, not a raw/replacement reload mechanism and not a temporary compatibility path. The public `/guardian reload` command itself remains deliberately roadmap-owned by the operations phase. BRIDGE-001 through BRIDGE-005 remain unchanged and are outside Phase 1B ownership.
+
+
+## Phase 1B closeout state
+
+As of 2026-09-26, **Phase 1B is complete**. The active bridge register was reviewed at closeout. Guardian Protection introduced no temporary bridge and its player-command execution, command visibility/suggestion, namespace, bypass, notification, configuration, and command-tree refresh paths are intended production architecture for the Phase 1B scope.
+
+BRIDGE-001 through BRIDGE-005 remain intentionally active under their existing later-phase owners. In particular, Phase 2 now owns the retirement of BRIDGE-001 and BRIDGE-002 as the feasibility manifest/validator and Cerberus Phase 0 client behavior are replaced by the stable protocol-v1 implementation.
+
+## Phase 2 closeout bridge review
+
+As of 2026-09-26, the Phase 2 implementation and live protocol-v1 verification are complete. BRIDGE-001 and BRIDGE-002 are retired by the real Loader-backed canonical manifest, production protocol-v1 negotiation/validation, and renamed `guardian.cerberus.dev.*` diagnostics. The closeout hardening pass introduces no new implementation bridge.
+
+BRIDGE-003, BRIDGE-004, and BRIDGE-005 remain intentionally active under their existing Phase 5 / Phase 4 owners. In particular, the retained Velocity adapter's Phase 0B-labelled diagnostics and current OptiFine denial are still BRIDGE-004 behavior; they must not be misread as Phase 2 protocol failures or opportunistically rewritten during Phase 3.
+
+After the final Java 25 / Gradle 9.7.1 gate in `PHASE_2_VERIFICATION.md` passes on project version `0.1.0-phase2`, Phase 2 is closed and Phase 3 may proceed without changing this bridge ownership.

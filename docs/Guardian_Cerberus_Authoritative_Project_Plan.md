@@ -1692,6 +1692,12 @@ BadWolfMC does not require punishment commands for the initial Protection migrat
 - the supported Paper reload lifecycle refreshes online command trees with `Player.updateCommands()` whenever Guardian activates a changed visibility policy; the user-facing `/guardian reload` command remains owned by the later operations phase.
 - the exact Phase 1B YAML and migration semantics are documented in `docs/GUARDIAN_PROTECTION.md` and `docs/EZPROTECTOR_MIGRATION.md`.
 
+#### Phase 1B completion record — 2026-09-26
+
+Phase 1B is complete. The accepted closeout source is project version `0.1.0-phase1b` and contains 73 automated tests. The operator reports the clean Java 25 / Gradle 9.7.1 gate green with all 73 tests passing. Live verification from a blank-slate Guardian installation passed the full Phase 1B matrix, including all four Admission/Protection enable combinations, player-only command enforcement, continued console/command-block/plugin command operation, allowlist/denylist behavior, visibility-bypass scoping, and independent `guardian.protection.notify` notification authority.
+
+The Phase 1B bridge register was reviewed at closeout. No new Protection bridge remains active; BRIDGE-001 through BRIDGE-005 retain their later-phase owners. The authoritative closeout baseline and archive hash are recorded in `docs/PROVENANCE.md`, and Phase 2 handoff context is recorded in `docs/PHASE_2_HANDOFF.md`.
+
 ---
 
 ## Phase 2 — Cerberus and protocol v1
@@ -2065,9 +2071,9 @@ The implementation should re-check current documentation when each phase begins 
 - Fabric 26.2 `fabric.mod.json` specification / mod-ID constraints
   https://docs.fabricmc.net/develop/loader/fabric-mod-json
 - Fabric Loader API / `FabricLoader#getAllMods()`
-  https://maven.fabricmc.net/docs/fabric-loader-0.18.6/net/fabricmc/loader/api/FabricLoader.html
+  https://maven.fabricmc.net/docs/fabric-loader-0.19.5/net/fabricmc/loader/api/FabricLoader.html
 - Fabric Loader `ModContainer`
-  https://maven.fabricmc.net/docs/fabric-loader-0.18.6/net/fabricmc/loader/api/ModContainer.html
+  https://maven.fabricmc.net/docs/fabric-loader-0.19.5/net/fabricmc/loader/api/ModContainer.html
 
 ### Geyser/Floodgate
 
@@ -2087,47 +2093,33 @@ The implementation should re-check current documentation when each phase begins 
 
 # 38. Handoff context for the next development chat
 
-**Phase 0 feasibility is complete. A Phase 1A implementation candidate is now prepared; Phase 1B begins only after Phase 1A build/local/live verification is accepted.**
+**Phase 0 feasibility, Phase 1 Guardian foundation/Protection, and the Phase 2 protocol-v1 implementation/live verification are complete. The next implementation phase is Phase 3 — Guardian policy engine once the final Java 25 clean gate for the Phase 2 closeout hardening source passes.**
 
-The project should continue treating this document as the primary design authority. BrandBlocker and the BadWolfMC GPLv3 eZProtector fork are legacy behavior/provenance references, not implementation architectures to preserve.
+Treat this document and the current repository as authoritative. `docs/PHASE_3_HANDOFF.md` is the concise next-phase implementation handoff; `docs/PHASE_2_IMPLEMENTATION.md` and `docs/PHASE_2_VERIFICATION.md` record the protocol-v1 implementation and closeout evidence. BrandBlocker and the BadWolfMC GPLv3 eZProtector fork remain provenance/behavior references only and do not control Phase 3 architecture.
 
-The standalone Paper 26.2 result is settled:
+Phase 2 established the production manifest/protocol boundary while preserving the proven transport architecture:
 
-- keep client classification and Cerberus presence/protocol detection in CONFIGURATION;
-- deny missing Cerberus and incompatible protocol before world entry;
-- for compatible Cerberus, enter a bounded PLAY quarantine;
-- wait a bounded/configurable interval for the PLAY challenge channel to register;
-- complete the nonce challenge/response in PLAY;
-- release only after `CERBERUS_VERIFIED`;
-- retain distinct `CERBERUS_TIMEOUT`, `MANIFEST_DENIED`, `MANIFEST_INVALID`, and compatibility outcomes;
-- do not use NMS, reflection, Fabric implementation internals, Mixins, or packet-library workarounds to force all-CONFIGURATION behavior.
+- standalone Paper retains CONFIGURATION client classification plus Cerberus presence/protocol gating, followed by bounded PLAY quarantine for the nonce challenge/response;
+- Guardian-Velocity completes Fabric/Cerberus attestation during its awaited CONFIGURATION lifecycle and remains the preferred BadWolfMC network Admission authority;
+- Guardian-Paper in Velocity authority mode verifies the trusted proxy assertion and does not duplicate client attestation;
+- protocol v1 uses explicit version/capability negotiation, a fresh 16-byte nonce, deterministic canonical serialization, bounded fields/count/depth/payload, and one accepted response per challenge;
+- Cerberus enumerates Loader-known entries through supported Fabric Loader APIs and preserves immediate containing-parent relationships and privacy-safe origin kinds without transmitting filesystem paths;
+- live testing distinguished `CERBERUS_REQUIRED`, `CERBERUS_TIMEOUT`, `CERBERUS_PROTOCOL_UNSUPPORTED`, `MANIFEST_INVALID`, and `CERBERUS_VERIFIED`; and
+- BRIDGE-001 and BRIDGE-002 are retired. BRIDGE-003, BRIDGE-004, and BRIDGE-005 retain their later-phase owners.
 
-The BadWolfMC Velocity-network result is also settled:
+The representative BadWolfMC Fabric 26.2 client produced 166 Loader-known entries. The manifest included ordinary top-level archives, built-in Java/Minecraft entries, Fabric Loader, Fabric API plus nested API modules, bundled libraries, and multi-level containment. Phase 3 MUST therefore define an explicit deterministic policy-addressable-entry model rather than assuming every Loader-known entry is an administrator-selected mod or deleting nested entries from consideration.
 
-- Guardian-Velocity is the preferred network admission authority;
-- perform Fabric/Cerberus admission during Velocity CONFIGURATION;
-- classify Bedrock first through supported Geyser/Floodgate APIs and never through username-prefix trust;
-- positively identified Bedrock receives no Cerberus challenge;
-- Guardian-Velocity sends short-lived authenticated admission state to Guardian-Paper;
-- Guardian-Paper verifies that state and MUST NOT independently reevaluate the same connection's policy;
-- backend Floodgate may sanity-check Bedrock origin as defense in depth without becoming a second authority;
-- reuse admission only within the same proxy connection across backend switches;
-- a new proxy connection creates a fresh admission session and fresh Cerberus challenge when applicable;
-- standalone Guardian-Paper remains supported without Velocity, Geyser, or Floodgate.
+Phase 3 owns the policy semantics described in Sections 10–11 and the Phase 3 roadmap: default and named profiles, deterministic profile priority, client-class actions, unknown-brand compatibility rules, mod allowlist/denylist behavior, required mods, per-mod rules, unlisted behavior, version rules, contained-mod semantics, baseline/bootstrap/runtime treatment, policy-scoped admission bypasses, optional LuckPerms profile resolution, atomic activation, and files-only validation.
 
-Phase 1A now replaces the feasibility-oriented foundation with the production Guardian Admission foundation, adds the independent `guardian-protection` domain boundary, and establishes the versioned configuration/localization lifecycle described in this contract while preserving every proven authority and lifecycle boundary above. The implementation remains a candidate until the Phase 1A verification gate passes.
+Do **not** redesign the proven Phase 2 protocol/transport merely to add policy. Structurally valid manifests should cross into the platform-neutral policy layer; protocol/session/integrity failures remain non-bypassable. Raw brand rules remain subordinate `JAVA_UNKNOWN` policy input and cannot turn positively classified Fabric into ordinary `ALLOW` or override trusted Bedrock origin.
 
-Phase 1B should then replace only the approved eZProtector command-protection behavior: execution rules, command visibility/suggestion policy, namespaced-command policy, sane centralized bypass semantics, and permission-gated notifications. It must not revive eZProtector's legacy client/mod countermeasures, fake information responses, or permission namespace.
+Do not opportunistically pull Phase 4/5/6 work into Phase 3. In particular:
 
-Guardian's permission API is now conceptually fixed under `guardian.admission.*`, `guardian.protection.*`, and `guardian.command.*`. Aggregate bypass nodes are explicit; correctness must not depend on wildcard expansion. Admission policy bypasses never bypass protocol/integrity checks, and a client-class bypass does not remove an explicit `REQUIRE_CERBERUS` action.
+- BRIDGE-005 production Geyser/Floodgate behavior remains Phase 4;
+- BRIDGE-003 proxy-secret provisioning and BRIDGE-004 Velocity production configuration/final diagnostics remain Phase 5; and
+- signed official Cerberus artifact identity/hostile-client hardening remains Phase 6.
 
-The current eZProtector tab-completion implementation checks a nominal global bypass in both its root-tree and legacy argument-completion paths, yet BadWolfMC has observed bypass behavior that is not reliable in practice. Guardian MUST therefore test the complete end-to-end client command-tree/suggestion behavior rather than considering a permission check in one listener sufficient. In particular, root visibility and downstream argument suggestions must share one Protection decision, and Guardian-owned visibility changes must refresh online client command trees through supported Paper APIs.
-
-For Phase 3, client configuration must normalize to explicit per-class `ALLOW` / `DENY` / `REQUIRE_CERBERUS` actions. Optional allowlist/denylist brand rules are for otherwise unknown Java brands and cannot override a positive Fabric/Cerberus requirement. Fabric mod policy must support clear allowlist/denylist semantics plus orthogonal required-mod rules, deterministic baseline/runtime-entry treatment, and validation that rejects contradictory policy.
-
-Do not accidentally promote Phase 0 spike details into permanent production configuration merely because they were sufficient for feasibility. In particular, exact assertion format/version, shared-secret provisioning UX, timeout defaults, logging verbosity, and disagreement policy still require deliberate production design in their appropriate phases.
-
-The signed-JAR/hash concept identified during Phase 0A research remains intentionally parked for Phase 6 as optional compliance hardening, with the explicit limitation that it is signed release-artifact identity rather than hostile-client remote attestation.
+Guardian Protection is complete for Phase 1B and remains regression-only during Phase 3 unless policy/configuration integration reveals a concrete shared-host defect.
 
 ---
 
@@ -2137,12 +2129,14 @@ Phase 0 succeeded in its purpose.
 
 The original stronger all-CONFIGURATION standalone assumption was tested rather than preserved by force: Fabric → Paper CONFIGURATION payload delivery works, but the tested supported Paper 26.2/Fabric 26.2 high-level APIs do not provide the clean reverse channel-registration path required for Paper → Fabric challenge delivery. The selected standalone hybrid is proven in live testing and preserves the most valuable pre-world behavior while remaining entirely on supported APIs.
 
-The Velocity path is also proven end to end. Guardian-Velocity can hold and resolve Fabric/Cerberus admission during CONFIGURATION, consume the security-sensitive client channels, classify Bedrock through supported Geyser/Floodgate APIs, and send a short-lived authenticated admission assertion to Guardian-Paper in time for its final pre-world gate. Guardian-Paper verifies that trusted result without becoming a duplicate policy authority.
+The Velocity path is proven end to end. Guardian-Velocity can hold and resolve Fabric/Cerberus admission during CONFIGURATION, consume the security-sensitive client channels, classify Bedrock through supported Geyser/Floodgate APIs, and send a short-lived authenticated admission assertion to Guardian-Paper in time for its final pre-world gate. Guardian-Paper verifies that trusted result without becoming a duplicate policy authority.
 
-Backend switching was live-tested with Fabric, vanilla, and Bedrock. Admission is reused within one proxy connection, while a full reconnect creates a new admission session and a fresh Cerberus challenge when applicable. Standalone Guardian-Paper was re-tested without Velocity/Geyser/Floodgate and remains functional.
+Backend switching was live-tested with Fabric, vanilla, and Bedrock. Admission is reused within one proxy connection, while a full reconnect creates a new admission session and a fresh Cerberus challenge when applicable. Standalone Guardian-Paper remains functional without Velocity, Geyser, or Floodgate.
 
-For BadWolfMC's production topology, Guardian-Velocity is therefore the preferred admission authority and Guardian-Paper is the trusted backend verifier. For non-Velocity deployments, Guardian-Paper remains a supported standalone authority using the Phase 0A hybrid.
+Phase 1 is complete. Guardian's production foundation preserves the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**, while Guardian Protection independently enforces the selected command execution/disclosure controls on Paper without affecting non-player command paths.
 
-The project can complete Phase 1A verification while preserving the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**. Phase 1B should not begin until that verification is accepted.
+Phase 2 has now replaced the synthetic feasibility manifest/validator with protocol v1 and real Fabric Loader state. Live testing on a representative 166-entry Fabric client passed both standalone and Velocity-authoritative happy paths, verified nested/multi-level manifest relationships and privacy minimization, and produced the intended distinct failure semantics for missing Cerberus, incompatible protocol, present-but-silent Cerberus, and malformed protocol data. The final closeout hardening source tightens protocol/mod-ID representation bounds and expands automated adversarial coverage; once its clean Java 25 / Gradle 9.7.1 gate passes, no additional Phase 2 live matrix is required.
 
-Guardian's scope is now intentionally broader than the BrandBlocker replacement originally envisioned, but it remains bounded: Admission and Protection are separate domains under one ecosystem rather than a single undifferentiated security subsystem. The selected eZProtector successor scope is command execution/disclosure protection only; historical client-mod tricks and fabricated information responses are retired.
+For BadWolfMC's production topology, Guardian-Velocity remains the preferred admission authority and Guardian-Paper the trusted backend verifier. For non-Velocity deployments, Guardian-Paper remains a supported standalone authority using the hybrid CONFIGURATION + bounded PLAY-quarantine path.
+
+The next implementation task is Phase 3: turn normalized classifications and structurally valid canonical manifests into deterministic, administrator-configurable admission policy without weakening or duplicating the Phase 2 protocol boundary.

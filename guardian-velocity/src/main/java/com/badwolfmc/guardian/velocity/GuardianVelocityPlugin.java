@@ -5,7 +5,7 @@ import com.badwolfmc.guardian.core.ClientOriginClassifier;
 import com.badwolfmc.guardian.core.DecisionOutcome;
 import com.badwolfmc.guardian.core.DecisionReason;
 import com.badwolfmc.guardian.core.GuardianDecision;
-import com.badwolfmc.guardian.core.Phase0ResponseValidator;
+import com.badwolfmc.guardian.core.ProtocolV1ResponseValidator;
 import com.badwolfmc.guardian.protocol.Challenge;
 import com.badwolfmc.guardian.protocol.ConnectionOrigin;
 import com.badwolfmc.guardian.protocol.GuardianProtocol;
@@ -48,8 +48,8 @@ import java.util.concurrent.TimeUnit;
 @Plugin(
     id = "guardian",
     name = "Guardian",
-    version = "0.1.0-phase1a",
-    description = "Guardian Admission for Velocity (proven Phase 0 transport retained through Phase 1A)",
+    version = "0.1.0-phase2",
+    description = "Guardian Admission for Velocity",
     authors = {"BadWolfMC"},
     dependencies = {
         @Dependency(id = "geyser", optional = true),
@@ -227,7 +227,7 @@ public final class GuardianVelocityPlugin {
     private void handlePresence(Player player, VelocityAdmissionSession session, byte[] data) {
         if (data.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {
             session.decide(GuardianDecision.deny(
-                DecisionReason.MANIFEST_INVALID, "CONFIGURATION presence exceeds Phase 0B.3 limit"));
+                DecisionReason.MANIFEST_INVALID, "CONFIGURATION presence exceeds Guardian protocol limit"));
             return;
         }
 
@@ -241,20 +241,21 @@ public final class GuardianVelocityPlugin {
             return;
         }
 
-        if (!session.recordPresence(presence.protocolVersion())) {
+        if (!session.recordPresence(presence)) {
             session.decide(GuardianDecision.deny(
                 DecisionReason.MANIFEST_INVALID, "conflicting duplicate Cerberus presence"));
             return;
         }
 
         logger.info("Guardian Phase 0B.3 Cerberus presence from {}: protocol={}",
-            player.getUsername(), presence.protocolVersion());
+            player.getUsername(), presence.minProtocolVersion() + ".." + presence.maxProtocolVersion());
 
-        if (presence.protocolVersion() != GuardianProtocol.VERSION) {
+        if (!presence.supports(GuardianProtocol.VERSION) || (presence.capabilities() & GuardianProtocol.REQUIRED_CAPABILITIES) != GuardianProtocol.REQUIRED_CAPABILITIES) {
             session.decide(GuardianDecision.deny(
                 DecisionReason.CERBERUS_PROTOCOL_UNSUPPORTED,
-                "Cerberus announced protocol " + presence.protocolVersion()
-                    + ", Guardian supports " + GuardianProtocol.VERSION));
+                "Cerberus announced protocol range " + presence.minProtocolVersion() + ".." + presence.maxProtocolVersion()
+                    + " with capabilities 0x" + Long.toHexString(presence.capabilities())
+                    + "; Guardian requires protocol " + GuardianProtocol.VERSION + " capabilities 0x" + Long.toHexString(GuardianProtocol.REQUIRED_CAPABILITIES)));
             return;
         }
     }
@@ -274,7 +275,7 @@ public final class GuardianVelocityPlugin {
         try {
             sent = player.sendPluginMessage(
                 CHALLENGE,
-                ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, nonce))
+                ProtocolCodec.encodeChallenge(new Challenge(GuardianProtocol.VERSION, GuardianProtocol.REQUIRED_CAPABILITIES, nonce))
             );
         } catch (RuntimeException ex) {
             logger.warn("Could not send Guardian Phase 0B.3 CONFIGURATION challenge to {}.",
@@ -295,9 +296,11 @@ public final class GuardianVelocityPlugin {
     }
 
     private void handleResponse(Player player, VelocityAdmissionSession session, byte[] data) {
-        if (session.decision() != null) {
+        if (!session.tryMarkResponseReceived()) {
+            session.decide(GuardianDecision.deny(DecisionReason.MANIFEST_INVALID, "duplicate Cerberus response"));
             return;
         }
+        if (session.decision() != null) return;
         if (!session.challengeSent() || session.nonce() == null) {
             session.decide(GuardianDecision.deny(
                 DecisionReason.MANIFEST_INVALID, "Cerberus response arrived before Guardian challenge"));
@@ -305,7 +308,7 @@ public final class GuardianVelocityPlugin {
         }
         if (data.length > GuardianProtocol.MAX_PAYLOAD_BYTES) {
             session.decide(GuardianDecision.deny(
-                DecisionReason.MANIFEST_INVALID, "CONFIGURATION response exceeds Phase 0B.3 limit"));
+                DecisionReason.MANIFEST_INVALID, "CONFIGURATION response exceeds Guardian protocol limit"));
             return;
         }
 
@@ -319,7 +322,7 @@ public final class GuardianVelocityPlugin {
             return;
         }
 
-        GuardianDecision decision = Phase0ResponseValidator.validate(session.nonce(), response);
+        GuardianDecision decision = ProtocolV1ResponseValidator.validate(session.nonce(), response);
         session.decide(decision);
         logger.info("Guardian Phase 0B.3 CONFIGURATION response from {}: {} / {} ({})",
             player.getUsername(), decision.outcome(), decision.reason(), decision.detail());
