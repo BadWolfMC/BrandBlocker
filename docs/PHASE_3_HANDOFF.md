@@ -1,19 +1,33 @@
 # Phase 3 handoff — Guardian policy engine
 
-This handoff is prepared from the Phase 2 closeout source on 2026-09-26. Use it after the final Phase 2 clean Java 25 / Gradle 9.7.1 gate in `PHASE_2_VERIFICATION.md` passes. `docs/Guardian_Cerberus_Authoritative_Project_Plan.md` remains controlling if this summary and the contract differ.
+This handoff is revised from the Phase 2.5 artifact-identity source on 2026-09-26. Use it after the Phase 2.5 clean Java 25 / Gradle 9.7.1 gate in `PHASE_2_5_VERIFICATION.md` passes. `docs/Guardian_Cerberus_Authoritative_Project_Plan.md` remains controlling if this summary and the contract differ.
 
 ## Authoritative baseline
 
-- project version: `0.1.0-phase2`
+- project version entering Phase 3: `0.1.0-phase2.5` after the Phase 2.5 closeout gate
 - protocol: Guardian/Cerberus protocol v1
-- repository test inventory after Phase 2 closeout hardening: 85 tests
+- repository source test inventory after Phase 2.5 implementation: 102 tests
 - standalone transport: CONFIGURATION classification/presence gate + bounded PLAY challenge/response quarantine
 - Velocity transport: awaited CONFIGURATION challenge/response, security-sensitive channel consumption at proxy, trusted admission assertion to Paper
 - real manifest characterization: 166 Loader-known entries on the representative BadWolfMC Fabric client
 - Phase 2 bridges retired: BRIDGE-001 and BRIDGE-002
 - bridges intentionally still active: BRIDGE-003, BRIDGE-004, BRIDGE-005
 
-Do not reconstruct earlier phases from chat history. Treat the repository, the authoritative plan, this handoff, `PHASE_2_IMPLEMENTATION.md`, `PHASE_2_VERIFICATION.md`, `IMPLEMENTATION_BRIDGES.md`, and `PROVENANCE.md` as source of truth.
+Do not reconstruct earlier phases from chat history. Treat the repository, the authoritative plan, this handoff, `PHASE_2_5_IMPLEMENTATION.md`, `PHASE_2_5_VERIFICATION.md`, `PHASE_2_IMPLEMENTATION.md`, `PHASE_2_VERIFICATION.md`, `IMPLEMENTATION_BRIDGES.md`, and `PROVENANCE.md` as source of truth.
+
+## Phase 2.5 inputs Phase 3 must consume
+
+Do not redesign these inputs while implementing policy:
+
+- protocol v1 requires `CAP_ARTIFACT_SHA256`;
+- every top-level `ARCHIVE` manifest entry has an exact SHA-256 of the installed outer JAR;
+- `NESTED`, `BUILTIN`, `DIRECTORY`, and `MIXED_OR_UNKNOWN` entries are explicitly unhashed under the Phase 2.5 origin contract;
+- nested entries retain their existing immediate parent relationship, so the top-level outer hash commits to contained bytes without forcing administrators to catalogue every nested library separately;
+- `plugins/Guardian/artifacts.yml` is the durable, validated, deterministic exact-artifact catalog produced/merged by `/guardian artifacts scan` from temporary administrator input in `approved-artifacts/`;
+- the catalog supports multiple versions per mod ID and multiple hashes per ID/version, and scanning is add-only rather than presence-synchronized; and
+- catalog membership is identity data only. Phase 3 must explicitly decide what policy meaning, if any, a catalogued or uncatalogued artifact has.
+
+The trust limitation is non-negotiable: SHA-256 verifies exact bytes **reported by a cooperating Cerberus client**; it does not prove a hostile/replaced Cerberus client reported truthfully.
 
 ## Phase 3 goal
 
@@ -32,7 +46,7 @@ Implement the authoritative Phase 3 scope:
 - administrator version rules/predicates;
 - contained/nested-mod policy semantics;
 - explicit baseline/bootstrap/runtime manifest-entry treatment derived from the Phase 2 evidence;
-- optional artifact-hash policy only to the extent required by the authoritative Phase 3 contract; do not convert hashes into remote attestation;
+- explicit exact-artifact policy semantics over the Phase 2.5 SHA-256 field and durable catalog; version-only rules may remain available where policy deliberately chooses them, but hashes must never be described as remote attestation;
 - classification-specific actions and explicit decision reasons;
 - validation that rejects contradictory/ambiguous policy instead of relying on hidden precedence;
 - policy-scoped admission bypass permissions that never bypass protocol/session/manifest integrity;
@@ -112,7 +126,7 @@ A required mod should count as permitted for membership purposes so administrato
 
 ## Transport and later-phase boundaries
 
-Do not redesign the Phase 2 wire protocol merely to implement policy. `guardian-core` should consume the validated platform-neutral manifest and produce deterministic policy decisions; Paper/Velocity adapters should remain transport/lifecycle hosts.
+Do not redesign the Phase 2/2.5 wire protocol or artifact catalog merely to implement policy. `guardian-core` should consume the validated platform-neutral manifest and produce deterministic policy decisions; Paper/Velocity adapters should remain transport/lifecycle hosts.
 
 Do not opportunistically pull forward:
 

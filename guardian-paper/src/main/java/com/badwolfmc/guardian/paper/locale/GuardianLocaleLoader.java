@@ -30,7 +30,14 @@ public final class GuardianLocaleLoader {
         "protection.command-denied",
         "protection.namespace-denied",
         "protection.notify.command-denied",
-        "protection.notify.namespace-denied"
+        "protection.notify.namespace-denied",
+        "artifacts.command.usage",
+        "artifacts.command.no-permission",
+        "artifacts.scan.started",
+        "artifacts.scan.already-running",
+        "artifacts.scan.success",
+        "artifacts.scan.unchanged",
+        "artifacts.scan.failed"
     );
 
     public GuardianLocaleCatalog load(Path localesDirectory, String selectedLocale)

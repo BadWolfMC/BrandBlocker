@@ -103,4 +103,16 @@ The final Phase 2 hardening/closeout pass is based on the exact repository archi
 - operator result before this closeout patch: Java 25 / Gradle 9.7.1 build PASS
 - operator live result: standalone Paper and Velocity-authoritative protocol-v1 matrices PASS with a representative 166-entry real Fabric manifest
 
-The closeout hardening patch changes the project version to `0.1.0-phase2`, tightens Fabric mod-ID and unsigned-16-bit protocol-version representation bounds, expands adversarial tests to 85 total, and records the Phase 2 verification/Phase 3 handoff state. The final Java 25 clean gate for this exact patched source remains the operator confirmation required to promote the candidate to the Phase 2 closeout baseline.
+The closeout hardening patch changes the project version to `0.1.0-phase2`, tightens Fabric mod-ID and unsigned-16-bit protocol-version representation bounds, expands adversarial tests to 85 total, and records the Phase 2 verification/Phase 3 handoff state. The supplied `Guardian(5).zip` establishes that this Phase 2 baseline subsequently passed the clean Java 25 / Gradle 9.7.1 gate with all 85 tests green.
+
+## Phase 2.5 artifact-identity source — 2026-09-26
+
+Phase 2.5 implementation is based on the exact repository archive supplied after Phase 2 closeout:
+
+- archive: `Guardian(5).zip`
+- SHA-256: `958b35fb7dbfeb06dd626a12f926efb33b8d9e8a7fe56f899ca72578ede5d48b`
+- starting project version: `0.1.0-phase2`
+- supplied Phase 2 automated baseline: 85 tests passing under Java 25 / Gradle 9.7.1
+- supplied Phase 2 live baseline: standalone Paper and Velocity-authoritative protocol-v1 verification complete
+
+The Phase 2.5 candidate revises unreleased protocol v1 in place with required exact top-level archive SHA-256, adds the bounded Guardian-managed approved-artifact importer/catalog, advances the project version to `0.1.0-phase2.5`, and expands the source test inventory to 102 `@Test` cases. The final clean Java 25 / Gradle 9.7.1 gate for this exact patched source remains the operator confirmation required for Phase 2.5 closeout.

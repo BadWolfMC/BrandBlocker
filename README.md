@@ -87,13 +87,19 @@ Phase 1B implements Guardian Protection while preserving the Phase 1A Admission 
 
 The public administrative command surface remains owned by the later operations phase; Phase 1B does not reintroduce eZProtector's raw reload command behavior. Phase 1B is complete: the operator reports the clean Java 25 / Gradle 9.7.1 gate green with all 73 repository tests passing, and the full local/live verification matrix in `docs/PHASE_1B_VERIFICATION.md` passed from a blank-slate Guardian installation, including all four Admission/Protection enable combinations, player-only execution enforcement, non-player command independence, allowlist/denylist behavior, visibility bypass scope, and notification permission scope.
 
-## Phase 2 status: closeout candidate
+## Phase 2 status: complete
 
 Phase 2 replaces the synthetic feasibility manifest with Guardian/Cerberus protocol v1 and a real Fabric Loader-backed canonical manifest while preserving the proven Paper and Velocity transport boundaries. Live verification on 2026-09-26 passed the standalone and Velocity-authoritative happy paths plus distinct missing-Cerberus, timeout, unsupported-protocol, and malformed-response outcomes. A representative BadWolfMC Fabric client produced a 166-entry canonical manifest with top-level, built-in, nested, and multi-level containment relationships and no transmitted filesystem paths.
 
-The closeout hardening revision tightens Fabric mod-ID/protocol-version bounds and expands the automated inventory from 73 to 85 tests. Run the final clean Java 25 / Gradle 9.7.1 gate in `docs/PHASE_2_VERIFICATION.md` after applying that revision. If it remains green, Phase 2 is complete with no additional live-client matrix required and Phase 3 may proceed from `docs/PHASE_3_HANDOFF.md`.
+The Phase 2 closeout baseline is green at 85 tests. Phase 2.5 now revises the still-unreleased protocol v1 in place to add exact top-level archive SHA-256 and a durable administrator-managed approved-artifact catalog before Phase 3 policy work.
 
 BRIDGE-001 and BRIDGE-002 are retired. BRIDGE-003 through BRIDGE-005 remain intentionally owned by later phases.
+
+## Phase 2.5 status: implementation candidate
+
+Phase 2.5 requires `CAP_ARTIFACT_SHA256`, hashes each top-level archive once per Cerberus environment snapshot, and keeps nested/built-in/development/ambiguous origins explicitly unhashed. Guardian-Paper adds `approved-artifacts/`, the asynchronous `/guardian artifacts scan` command, and deterministic add-only `artifacts.yml` identity storage. The catalog is separate from admission policy and no supplied JAR is executed, installed, extracted, or loaded.
+
+The source test inventory is 102 tests. Run the clean Java 25 / Gradle 9.7.1 gate in `docs/PHASE_2_5_VERIFICATION.md`; once green, Phase 3 proceeds from the revised `docs/PHASE_3_HANDOFF.md` and consumes exact artifact identity without changing protocol v1 again.
 
 See:
 
@@ -106,6 +112,8 @@ See:
 - `docs/PHASE_2_HANDOFF.md`
 - `docs/PHASE_2_IMPLEMENTATION.md`
 - `docs/PHASE_2_VERIFICATION.md`
+- `docs/PHASE_2_5_IMPLEMENTATION.md`
+- `docs/PHASE_2_5_VERIFICATION.md`
 - `docs/PHASE_3_HANDOFF.md`
 - `docs/GUARDIAN_PROTECTION.md`
 - `docs/EZPROTECTOR_MIGRATION.md`

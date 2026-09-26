@@ -1,11 +1,14 @@
 package com.badwolfmc.guardian.paper;
 
+import com.badwolfmc.guardian.core.artifact.ArtifactCatalogException;
+import com.badwolfmc.guardian.core.artifact.ArtifactImportService;
 import com.badwolfmc.guardian.paper.config.GuardianConfigurationException;
 import com.badwolfmc.guardian.paper.config.GuardianRuntimeManager;
 import com.badwolfmc.guardian.paper.config.GuardianRuntimeSnapshot;
 import com.badwolfmc.guardian.paper.config.GuardianStartupRecovery;
 import com.badwolfmc.guardian.paper.locale.GuardianLocaleLoader;
 import com.badwolfmc.guardian.paper.locale.GuardianMessageRenderer;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
@@ -22,6 +25,7 @@ public final class GuardianPaperPlugin extends JavaPlugin {
     private GuardianRuntimeManager runtimeManager;
     private PaperAdmissionAdapter admissionAdapter;
     private PaperProtectionRuntime protectionRuntime;
+    private ArtifactImportService artifactImportService;
 
     @Override
     public void onEnable() {
@@ -33,6 +37,9 @@ public final class GuardianPaperPlugin extends JavaPlugin {
         GuardianRuntimeSnapshot snapshot = loadInitialWithRecovery(data);
 
         GuardianMessageRenderer messageRenderer = new GuardianMessageRenderer();
+        artifactImportService = new ArtifactImportService(data);
+        initializeArtifactCatalogSurface();
+        registerArtifactCommand(messageRenderer);
         if (snapshot.settings().admissionEnabled()) {
             admissionAdapter = new PaperAdmissionAdapter(this, runtimeManager, messageRenderer);
             admissionAdapter.enable();
@@ -200,6 +207,30 @@ public final class GuardianPaperPlugin extends JavaPlugin {
             getLogger().warning("Guardian preserved the invalid file as '" + result.backup()
                 + "' and restored packaged defaults at '" + result.original() + "'. " + followUp);
         }
+    }
+
+    private void initializeArtifactCatalogSurface() {
+        try {
+            artifactImportService.ensureInputDirectory();
+            if (Files.exists(getDataFolder().toPath().resolve("artifacts.yml"))) {
+                int entries = artifactImportService.validateCatalog().size();
+                getLogger().info("Guardian artifact catalog validated with " + entries + " exact artifact entries.");
+            }
+        } catch (ArtifactCatalogException ex) {
+            // Phase 2.5 catalog data is not yet an admission-policy authority. Surface the problem
+            // clearly, but do not disable otherwise valid Admission/Protection domains.
+            getLogger().warning("Guardian artifact catalog is not ready for import: " + ex.getMessage());
+        }
+    }
+
+    private void registerArtifactCommand(GuardianMessageRenderer renderer) {
+        PluginCommand command = getCommand("guardian");
+        if (command == null) {
+            throw new IllegalStateException("Guardian plugin.yml is missing the guardian command");
+        }
+        ArtifactAdminCommand handler = new ArtifactAdminCommand(this, artifactImportService, renderer);
+        command.setExecutor(handler);
+        command.setTabCompleter(handler);
     }
 
     private static IllegalStateException activationFailure(GuardianConfigurationException ex) {

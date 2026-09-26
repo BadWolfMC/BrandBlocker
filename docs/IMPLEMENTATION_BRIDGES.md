@@ -119,4 +119,10 @@ As of 2026-09-26, the Phase 2 implementation and live protocol-v1 verification a
 
 BRIDGE-003, BRIDGE-004, and BRIDGE-005 remain intentionally active under their existing Phase 5 / Phase 4 owners. In particular, the retained Velocity adapter's Phase 0B-labelled diagnostics and current OptiFine denial are still BRIDGE-004 behavior; they must not be misread as Phase 2 protocol failures or opportunistically rewritten during Phase 3.
 
-After the final Java 25 / Gradle 9.7.1 gate in `PHASE_2_VERIFICATION.md` passes on project version `0.1.0-phase2`, Phase 2 is closed and Phase 3 may proceed without changing this bridge ownership.
+The Java 25 / Gradle 9.7.1 Phase 2 closeout gate passed at project version `0.1.0-phase2`. Phase 2.5 does not change bridge ownership; Phase 3 may proceed after the Phase 2.5 gate passes.
+
+## Phase 2.5 bridge review
+
+Phase 2.5 exact artifact identity and approved-artifact catalog work introduces no new implementation bridge. The artifact digest is part of the unreleased protocol-v1 canonical contract and the catalog is a permanent administrator identity-data surface, not temporary compatibility scaffolding.
+
+BRIDGE-003, BRIDGE-004, and BRIDGE-005 remain unchanged under their Phase 5 / Phase 4 owners. Phase 2.5 does not rewrite Velocity production configuration, proxy-secret provisioning, or Geyser/Floodgate production behavior.

@@ -2,12 +2,15 @@ package com.badwolfmc.guardian.protocol;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProtocolCodecTest {
@@ -40,6 +43,15 @@ class ProtocolCodecTest {
     }
 
     @Test
+    void artifactHashCapabilityIsRequiredByProtocolV1() {
+        assertEquals(1L << 3, GuardianProtocol.CAP_ARTIFACT_SHA256);
+        assertEquals(
+            GuardianProtocol.CAP_ARTIFACT_SHA256,
+            GuardianProtocol.REQUIRED_CAPABILITIES & GuardianProtocol.CAP_ARTIFACT_SHA256
+        );
+    }
+
+    @Test
     void challengeRoundTripsCapabilitiesAndNonce() throws Exception {
         Challenge challenge = new Challenge(1, GuardianProtocol.REQUIRED_CAPABILITIES, nonce());
         Challenge decoded = ProtocolCodec.decodeChallenge(ProtocolCodec.encodeChallenge(challenge));
@@ -49,15 +61,18 @@ class ProtocolCodecTest {
     }
 
     @Test
-    void canonicalManifestRoundTripsDeterministically() throws Exception {
+    void canonicalManifestRoundTripsDeterministicallyWithArtifactIdentity() throws Exception {
         Manifest manifest = ManifestCanonicalizer.canonicalize(new Manifest(
             "26.2",
             "0.19.5",
             "0.2.0",
             GuardianProtocol.KNOWN_CAPABILITIES,
             List.of(
-                new ManifestEntry("z-child", "2", "a-parent", OriginKind.ARCHIVE),
-                new ManifestEntry("a-parent", "1", null, OriginKind.DIRECTORY)
+                new ManifestEntry("z-child", "2", "a-parent", OriginKind.NESTED),
+                new ManifestEntry("a-parent", "1", null, OriginKind.ARCHIVE, hash(7)),
+                new ManifestEntry("builtin-java", "25", null, OriginKind.BUILTIN),
+                new ManifestEntry("devmod", "1", null, OriginKind.DIRECTORY),
+                new ManifestEntry("unknownmod", "1", null, OriginKind.MIXED_OR_UNKNOWN)
             )
         ));
         Response response = new Response(1, GuardianProtocol.KNOWN_CAPABILITIES, nonce(), manifest);
@@ -66,19 +81,57 @@ class ProtocolCodecTest {
 
         assertEquals(manifest, decoded.manifest());
         assertArrayEquals(encoded, ProtocolCodec.encodeResponse(decoded));
+        assertEquals(hash(7), decoded.manifest().entries().stream()
+            .filter(entry -> entry.modId().equals("a-parent")).findFirst().orElseThrow().artifactSha256());
+        assertNull(decoded.manifest().entries().stream()
+            .filter(entry -> entry.modId().equals("z-child")).findFirst().orElseThrow().artifactSha256());
+    }
+
+    @Test
+    void malformedDigestLengthIsRejected() {
+        Response response = new Response(
+            GuardianProtocol.VERSION,
+            GuardianProtocol.KNOWN_CAPABILITIES,
+            nonce(),
+            minimalManifest()
+        );
+        byte[] encoded = ProtocolCodec.encodeResponse(response);
+        // A one-entry response ends with: hasDigest=true, digestLength=32, 32 digest bytes.
+        encoded[encoded.length - ArtifactSha256.BYTES - 1] = (byte) (ArtifactSha256.BYTES - 1);
+        assertThrows(ProtocolException.class, () -> ProtocolCodec.decodeResponse(encoded));
+    }
+
+    @Test
+    void artifactDigestEncodingAndPlacementAreStrict() {
+        assertThrows(IllegalArgumentException.class, () -> new ArtifactSha256("A".repeat(64)));
+        assertThrows(IllegalArgumentException.class, () -> new ArtifactSha256("0".repeat(63)));
+        assertThrows(IllegalArgumentException.class, () -> ArtifactSha256.fromBytes(new byte[31]));
+
+        assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
+            "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES,
+            List.of(new ManifestEntry("archive", "1", null, OriginKind.ARCHIVE)))));
+        assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
+            "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES,
+            List.of(new ManifestEntry("builtin", "1", null, OriginKind.BUILTIN, hash(1))))));
+        assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
+            "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES,
+            List.of(
+                archive("parent", "1", 1),
+                new ManifestEntry("nested", "1", "parent", OriginKind.NESTED, hash(2))
+            ))));
     }
 
     @Test
     void realisticLargeNestedManifestRoundTrips() throws Exception {
         List<ManifestEntry> entries = new ArrayList<>();
-        entries.add(new ManifestEntry("root", "1.0.0", null, OriginKind.ARCHIVE));
+        entries.add(archive("root", "1.0.0", 9));
         for (int i = 1; i < 300; i++) {
             entries.add(new ManifestEntry("m" + String.format("%03d", i), "1.2.3+build." + i,
                 "root", OriginKind.NESTED));
         }
 
         Manifest manifest = ManifestCanonicalizer.canonicalize(new Manifest(
-            "26.2", "0.19.5", "0.1.0-phase2", GuardianProtocol.KNOWN_CAPABILITIES, entries));
+            "26.2", "0.19.5", "0.1.0-phase2.5", GuardianProtocol.KNOWN_CAPABILITIES, entries));
         byte[] encoded = ProtocolCodec.encodeResponse(
             new Response(GuardianProtocol.VERSION, GuardianProtocol.KNOWN_CAPABILITIES, nonce(), manifest));
 
@@ -95,9 +148,18 @@ class ProtocolCodecTest {
             Arrays.stream(Manifest.class.getRecordComponents()).map(component -> component.getName()).toList()
         );
         assertEquals(
-            List.of("modId", "version", "parentModId", "originKind"),
+            List.of("modId", "version", "parentModId", "originKind", "artifactSha256"),
             Arrays.stream(ManifestEntry.class.getRecordComponents()).map(component -> component.getName()).toList()
         );
+
+        byte[] encoded = ProtocolCodec.encodeResponse(new Response(
+            GuardianProtocol.VERSION,
+            GuardianProtocol.KNOWN_CAPABILITIES,
+            nonce(),
+            minimalManifest()
+        ));
+        assertFalse(new String(encoded, StandardCharsets.ISO_8859_1).contains("/home/"));
+        assertFalse(new String(encoded, StandardCharsets.ISO_8859_1).contains("C:\\Users\\"));
     }
 
     @Test
@@ -111,22 +173,22 @@ class ProtocolCodecTest {
             maxRelease,
             maxRelease,
             GuardianProtocol.KNOWN_CAPABILITIES,
-            List.of(new ManifestEntry(maxId, maxVersion, null, OriginKind.ARCHIVE))
+            List.of(new ManifestEntry(maxId, maxVersion, null, OriginKind.ARCHIVE, hash(3)))
         ));
         assertEquals(maxId, accepted.entries().getFirst().modId());
 
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
             "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES,
             List.of(new ManifestEntry("a" + "b".repeat(GuardianProtocol.MAX_MOD_ID_BYTES), "1", null,
-                OriginKind.ARCHIVE)))));
+                OriginKind.ARCHIVE, hash(1))))));
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
             "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES,
             List.of(new ManifestEntry("valid-id", "v".repeat(GuardianProtocol.MAX_VERSION_BYTES + 1), null,
-                OriginKind.ARCHIVE)))));
+                OriginKind.ARCHIVE, hash(1))))));
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
             "r".repeat(GuardianProtocol.MAX_RELEASE_METADATA_BYTES + 1), "loader", "cerberus",
             GuardianProtocol.KNOWN_CAPABILITIES,
-            List.of(new ManifestEntry("valid-id", "1", null, OriginKind.ARCHIVE)))));
+            List.of(archive("valid-id", "1", 1)))));
     }
 
     @Test
@@ -170,7 +232,7 @@ class ProtocolCodecTest {
         List<ManifestEntry> entries = new ArrayList<>();
         for (int i = 0; i < GuardianProtocol.MAX_MANIFEST_ENTRIES; i++) {
             entries.add(new ManifestEntry("m" + String.format("%03d", i),
-                "v".repeat(GuardianProtocol.MAX_VERSION_BYTES), null, OriginKind.ARCHIVE));
+                "v".repeat(GuardianProtocol.MAX_VERSION_BYTES), null, OriginKind.ARCHIVE, hash(i)));
         }
         Manifest manifest = ManifestCanonicalizer.canonicalize(new Manifest(
             "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES, entries));
@@ -191,7 +253,7 @@ class ProtocolCodecTest {
 
     @Test
     void malformedUtf8IsRejected() {
-        byte[] payload = ProtocolCodec.encodePresence(new Presence(1, 1, 7, "x"));
+        byte[] payload = ProtocolCodec.encodePresence(new Presence(1, 1, GuardianProtocol.KNOWN_CAPABILITIES, "x"));
         payload[payload.length - 1] = (byte) 0x80;
         assertThrows(ProtocolException.class, () -> ProtocolCodec.decodePresence(payload));
     }
@@ -199,22 +261,22 @@ class ProtocolCodecTest {
     @Test
     void duplicateAndImpossibleRelationshipsAreRejected() {
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
-            "26.2", "l", "c", 7, List.of(
-                new ManifestEntry("aa", "1", null, OriginKind.ARCHIVE),
-                new ManifestEntry("aa", "2", null, OriginKind.ARCHIVE)))));
+            "26.2", "l", "c", GuardianProtocol.KNOWN_CAPABILITIES, List.of(
+                archive("aa", "1", 1),
+                archive("aa", "2", 2)))));
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
-            "26.2", "l", "c", 7,
-            List.of(new ManifestEntry("aa", "1", "missing", OriginKind.ARCHIVE)))));
+            "26.2", "l", "c", GuardianProtocol.KNOWN_CAPABILITIES,
+            List.of(new ManifestEntry("aa", "1", "missing", OriginKind.NESTED)))));
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.canonicalize(new Manifest(
-            "26.2", "l", "c", 7,
-            List.of(new ManifestEntry("bad id", "1", null, OriginKind.ARCHIVE)))));
+            "26.2", "l", "c", GuardianProtocol.KNOWN_CAPABILITIES,
+            List.of(new ManifestEntry("bad id", "1", null, OriginKind.ARCHIVE, hash(1))))));
     }
 
     @Test
     void nonCanonicalWireManifestIsDetectable() {
-        Manifest manifest = new Manifest("26.2", "l", "c", 7, List.of(
-            new ManifestEntry("zz", "1", null, OriginKind.ARCHIVE),
-            new ManifestEntry("aa", "1", null, OriginKind.ARCHIVE)
+        Manifest manifest = new Manifest("26.2", "l", "c", GuardianProtocol.KNOWN_CAPABILITIES, List.of(
+            archive("zz", "1", 1),
+            archive("aa", "1", 2)
         ));
         assertThrows(IllegalArgumentException.class, () -> ManifestCanonicalizer.validateCanonical(manifest));
     }
@@ -222,26 +284,26 @@ class ProtocolCodecTest {
     private static Manifest canonicalSingle(String id) {
         return ManifestCanonicalizer.canonicalize(new Manifest(
             "26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES,
-            List.of(new ManifestEntry(id, "1", null, OriginKind.ARCHIVE))));
+            List.of(new ManifestEntry(id, "1", null, OriginKind.ARCHIVE, hash(1)))));
     }
 
     private static Manifest minimalManifest() {
         return ManifestCanonicalizer.canonicalize(new Manifest(
-            "26.2", "0.19.5", "0.1.0-phase2", GuardianProtocol.KNOWN_CAPABILITIES,
-            List.of(new ManifestEntry("fabricloader", "0.19.5", null, OriginKind.ARCHIVE))));
+            "26.2", "0.19.5", "0.1.0-phase2.5", GuardianProtocol.KNOWN_CAPABILITIES,
+            List.of(archive("fabricloader", "0.19.5", 5))));
     }
 
     private static Manifest manifestWithEntries(int count) {
         List<ManifestEntry> entries = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            entries.add(new ManifestEntry("m" + String.format("%03d", i), "1", null, OriginKind.ARCHIVE));
+            entries.add(new ManifestEntry("m" + String.format("%03d", i), "1", null, OriginKind.ARCHIVE, hash(i)));
         }
         return new Manifest("26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES, entries);
     }
 
     private static Manifest containmentChain(int depth) {
         List<ManifestEntry> entries = new ArrayList<>();
-        entries.add(new ManifestEntry("m00", "1", null, OriginKind.ARCHIVE));
+        entries.add(archive("m00", "1", 1));
         for (int i = 1; i <= depth; i++) {
             entries.add(new ManifestEntry("m" + String.format("%02d", i), "1",
                 "m" + String.format("%02d", i - 1), OriginKind.NESTED));
@@ -249,11 +311,19 @@ class ProtocolCodecTest {
         return new Manifest("26.2", "loader", "cerberus", GuardianProtocol.KNOWN_CAPABILITIES, entries);
     }
 
+    private static ManifestEntry archive(String id, String version, int seed) {
+        return new ManifestEntry(id, version, null, OriginKind.ARCHIVE, hash(seed));
+    }
+
+    private static ArtifactSha256 hash(int seed) {
+        byte[] bytes = new byte[ArtifactSha256.BYTES];
+        Arrays.fill(bytes, (byte) seed);
+        return ArtifactSha256.fromBytes(bytes);
+    }
+
     private static byte[] nonce() {
         byte[] nonce = new byte[GuardianProtocol.NONCE_BYTES];
-        for (int i = 0; i < nonce.length; i++) {
-            nonce[i] = (byte) i;
-        }
+        for (int i = 0; i < nonce.length; i++) nonce[i] = (byte) i;
         return nonce;
     }
 }

@@ -5,3 +5,11 @@ api-version: '26.2'
 authors: [BadWolfMC]
 description: Guardian Admission and Protection for Paper.
 softdepend: [floodgate]
+commands:
+  guardian:
+    description: Guardian administrative commands.
+    usage: /guardian artifacts scan
+permissions:
+  guardian.artifacts.scan:
+    description: Scan approved-artifacts and merge exact identities into artifacts.yml.
+    default: op

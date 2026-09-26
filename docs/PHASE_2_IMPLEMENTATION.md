@@ -94,3 +94,7 @@ The closeout suite adds explicit coverage for:
 ## Phase 3 boundary
 
 No named profiles, LuckPerms profile selection, mod allowlist/denylist policy, required-mod rules, administrator version predicates, admission policy bypasses, artifact-hash enforcement, or baseline-entry policy are implemented here. Phase 2 supplies validated canonical input and evidence from a real manifest; Phase 3 owns the policy semantics.
+
+## Phase 2.5 protocol-v1 revision note
+
+Phase 2.5 subsequently revised this **unreleased** protocol-v1 manifest representation in place. The Phase 2 transport/session findings remain authoritative, but a current production-v1 manifest additionally requires `CAP_ARTIFACT_SHA256` and exact SHA-256 on every top-level `ARCHIVE` entry. See `PHASE_2_5_IMPLEMENTATION.md` for the current canonical artifact-identity contract. No compatibility path for the internal Phase 2-only v1 shape is retained.

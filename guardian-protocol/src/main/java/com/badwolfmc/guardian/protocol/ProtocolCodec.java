@@ -31,7 +31,18 @@ public final class ProtocolCodec {
             writeUtf8(out,m.fabricLoaderVersion(),GuardianProtocol.MAX_RELEASE_METADATA_BYTES);
             writeUtf8(out,m.cerberusVersion(),GuardianProtocol.MAX_RELEASE_METADATA_BYTES);
             out.writeShort(m.entries().size());
-            for (ManifestEntry e:m.entries()) { writeUtf8(out,e.modId(),GuardianProtocol.MAX_MOD_ID_BYTES); writeUtf8(out,e.version(),GuardianProtocol.MAX_VERSION_BYTES); out.writeBoolean(e.parentModId()!=null); if(e.parentModId()!=null) writeUtf8(out,e.parentModId(),GuardianProtocol.MAX_MOD_ID_BYTES); out.writeByte(e.originKind().ordinal()); }
+            for (ManifestEntry e:m.entries()) {
+                writeUtf8(out,e.modId(),GuardianProtocol.MAX_MOD_ID_BYTES);
+                writeUtf8(out,e.version(),GuardianProtocol.MAX_VERSION_BYTES);
+                out.writeBoolean(e.parentModId()!=null);
+                if(e.parentModId()!=null) writeUtf8(out,e.parentModId(),GuardianProtocol.MAX_MOD_ID_BYTES);
+                out.writeByte(e.originKind().ordinal());
+                out.writeBoolean(e.artifactSha256()!=null);
+                if(e.artifactSha256()!=null) {
+                    out.writeByte(ArtifactSha256.BYTES);
+                    out.write(e.artifactSha256().bytes());
+                }
+            }
         });
     }
     public static Response decodeResponse(byte[] payload) throws ProtocolException {
@@ -40,7 +51,21 @@ public final class ProtocolCodec {
             String mc=readUtf8(in,GuardianProtocol.MAX_RELEASE_METADATA_BYTES), loader=readUtf8(in,GuardianProtocol.MAX_RELEASE_METADATA_BYTES), cerb=readUtf8(in,GuardianProtocol.MAX_RELEASE_METADATA_BYTES);
             int count=u16(in); if(count>GuardianProtocol.MAX_MANIFEST_ENTRIES) throw new ProtocolException("manifest entry count exceeds limit");
             List<ManifestEntry> entries=new ArrayList<>(count);
-            for(int i=0;i<count;i++) { String id=readUtf8(in,GuardianProtocol.MAX_MOD_ID_BYTES), ver=readUtf8(in,GuardianProtocol.MAX_VERSION_BYTES); String parent=in.readBoolean()?readUtf8(in,GuardianProtocol.MAX_MOD_ID_BYTES):null; int origin=in.readUnsignedByte(); if(origin>=OriginKind.values().length) throw new ProtocolException("invalid origin kind "+origin); entries.add(new ManifestEntry(id,ver,parent,OriginKind.values()[origin])); }
+            for(int i=0;i<count;i++) {
+                String id=readUtf8(in,GuardianProtocol.MAX_MOD_ID_BYTES), ver=readUtf8(in,GuardianProtocol.MAX_VERSION_BYTES);
+                String parent=in.readBoolean()?readUtf8(in,GuardianProtocol.MAX_MOD_ID_BYTES):null;
+                int origin=in.readUnsignedByte();
+                if(origin>=OriginKind.values().length) throw new ProtocolException("invalid origin kind "+origin);
+                ArtifactSha256 digest = null;
+                if (in.readBoolean()) {
+                    int digestLength = in.readUnsignedByte();
+                    if (digestLength != ArtifactSha256.BYTES) {
+                        throw new ProtocolException("invalid SHA-256 digest length " + digestLength);
+                    }
+                    digest = ArtifactSha256.fromBytes(exact(in, digestLength, "SHA-256 digest"));
+                }
+                entries.add(new ManifestEntry(id,ver,parent,OriginKind.values()[origin],digest));
+            }
             consumed(in); return new Response(v,caps,nonce,new Manifest(mc,loader,cerb,caps,entries));
         });
     }

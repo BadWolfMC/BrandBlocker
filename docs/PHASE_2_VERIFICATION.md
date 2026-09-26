@@ -4,17 +4,17 @@
 
 **Live protocol/transport matrix: PASS.**
 
-**Final closeout automated gate:** run once after applying the Phase 2 closeout hardening patch. The pre-hardening Phase 2 source in the supplied archive already has an operator-confirmed Java 25 / Gradle 9.7.1 build and archived 73-test green result. The closeout patch expands the repository inventory to 85 tests and tightens protocol/mod-ID bounds; no additional live-client permutations are required if the clean gate remains green.
+**Final closeout automated gate: PASS.** The Phase 2 closeout baseline reached project version `0.1.0-phase2` with all 85 tests green under Java 25 / Gradle 9.7.1. No additional Phase 2 live-client permutations are required.
 
-## 1. Final clean automated gate
+## 1. Final clean automated gate — PASS
 
-From the repository root on Java 25:
+The accepted local verification command was:
 
 ```powershell
 .\gradlew.bat clean test :guardian-paper:jar :guardian-velocity:jar :cerberus-fabric:build
 ```
 
-Expected after this closeout patch:
+Accepted result:
 
 - 85 tests pass with no failures/errors/skips;
 - `guardian-paper`, `guardian-velocity`, and `cerberus-fabric` build successfully at project version `0.1.0-phase2`;
@@ -95,6 +95,10 @@ A dedicated development-directory/Loom-origin live run is also not required for 
 
 No new Phase 2 bridge is introduced by the closeout hardening pass.
 
-## Completion rule
+## Completion record
 
-Once the clean Java 25 / Gradle 9.7.1 command in section 1 passes on this exact closeout source, Phase 2 is complete and Phase 3 may proceed. No additional live connection matrix is requested for Phase 2 unless that build exposes a concrete regression.
+Phase 2 is complete at `0.1.0-phase2` with the Java 25 / Gradle 9.7.1 gate and live matrix green. Phase 2.5 intentionally revises the unreleased protocol-v1 artifact-identity shape before Phase 3 begins.
+
+## Phase 2.5 historical note
+
+This document remains the Phase 2 transport/manifest closeout record. Phase 2.5 later revised the unreleased protocol-v1 manifest shape in place to add required top-level archive SHA-256. Current protocol verification therefore continues in `PHASE_2_5_VERIFICATION.md`; no compatibility promise exists for the earlier internal Phase 2 v1 bytes.

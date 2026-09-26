@@ -793,7 +793,7 @@ Timeout, unsupported protocol, and invalid response SHOULD likewise be independe
 
 Cerberus SHOULD derive the manifest from Fabric Loader's public API, including `FabricLoader#getAllMods()` and `ModContainer` metadata/origin relationships.
 
-A canonical manifest SHOULD contain only information relevant to policy enforcement, such as:
+Protocol v1's Phase 2.5 canonical manifest contains only information relevant to policy enforcement:
 
 - Minecraft version;
 - Fabric Loader version;
@@ -802,8 +802,10 @@ A canonical manifest SHOULD contain only information relevant to policy enforcem
 - mod ID;
 - mod version;
 - relevant parent/contained relationship;
-- optional artifact digest when supported and requested;
-- enough source/origin classification to determine whether hashing is meaningful.
+- origin classification; and
+- the exact SHA-256 digest of each applicable top-level `ARCHIVE` artifact.
+
+`CAP_ARTIFACT_SHA256` is part of the required production protocol-v1 capability set. The digest algorithm is fixed by protocol v1 rather than client-selected. The wire representation carries exactly 32 digest bytes and malformed digest lengths are rejected.
 
 Cerberus MUST NOT report:
 
@@ -817,35 +819,55 @@ Cerberus MUST NOT report:
 
 ### 15.1 Nested/contained mods
 
-Cerberus SHOULD report the complete relevant Loader-known mod relationship rather than silently deleting nested mods from the manifest.
+Cerberus reports the complete relevant Loader-known mod relationship rather than silently deleting nested mods from the manifest.
 
-Guardian policy MAY provide administrator-friendly handling for known bundles such as Fabric API, but nested mods MUST NOT become an invisible blind spot.
+Only a top-level `ARCHIVE` entry carries its own SHA-256. A `NESTED` entry carries no separate digest because the exact bytes of the containing nested JAR/resource are already committed by the digest of its enclosing top-level archive. Parent/child relationships remain explicit so Phase 3 can define administrator-friendly policy semantics without making nested entries invisible.
 
-The exact policy semantics for contained mods are deferred and MUST be covered by tests before release.
+The exact Phase 3 policy semantics for contained mods remain deferred and MUST be covered by tests before release.
 
-### 15.2 Development environments
+### 15.2 Development and ambiguous origins
 
-Fabric development environments can have directory/classpath origins rather than ordinary release JARs.
+Fabric development environments can have directory/classpath origins rather than ordinary release JARs. Protocol v1 deliberately does not invent directory-tree hashing.
 
-Guardian/Cerberus MUST define deterministic behavior for non-hashable or development-style origins.
+The deterministic Phase 2.5 origin/digest contract is:
 
-Production policies MAY deny development-environment manifests by default while allowing a deliberately configured developer/staff exception.
+- top-level `ARCHIVE` -> exact outer-file SHA-256 is required;
+- `NESTED` -> no separate digest; identity is covered by the containing archive plus containment relationship;
+- `BUILTIN` -> no artifact digest;
+- `DIRECTORY` -> no artifact digest;
+- `MIXED_OR_UNKNOWN` -> no artifact digest and conservative future policy handling.
+
+A top-level path origin is classified as `ARCHIVE` only when it resolves to exactly one regular non-symlink file. Multiple roots, symlinks, and other ambiguous path shapes remain `MIXED_OR_UNKNOWN` rather than being given a misleading archive identity.
+
+Production policies MAY deny development/ambiguous origins by default while allowing a deliberately configured developer/staff exception.
 
 ---
 
-## 16. Artifact hashes and signed release identity
+## 16. Exact artifact identity and approved-artifact catalog
 
-Artifact hashes are useful integrity metadata but are not remote attestation.
+Phase 2.5 makes exact SHA-256 artifact identity a stable protocol-v1 primitive. SHA-256 verifies the exact artifact bytes reported by a cooperating Cerberus client; it does not independently prove that a hostile/replaced Cerberus client reported those bytes truthfully.
 
-Guardian MAY support SHA-256 or another appropriate cryptographic digest for mod artifacts.
+Guardian-Paper provides an administrator-managed, inert import surface:
 
-Hash rules SHOULD be optional rather than mandatory for every mod because exact artifact pinning increases administrative maintenance.
+```text
+plugins/Guardian/
+├── approved-artifacts/   # temporary input JARs; never executed or installed
+└── artifacts.yml         # durable Guardian-managed exact-artifact catalog
+```
+
+`approved-artifacts/` is a flat directory of candidate `.jar` files. Guardian never classloads, executes, installs, copies to a mods directory, invokes Fabric Loader against, or extracts these files. The scanner uses read-only ZIP/JAR access, reads only bounded root `fabric.mod.json` metadata, derives mod ID/version from that metadata rather than the filename, and hashes the exact whole JAR bytes.
+
+Import is explicit through `/guardian artifacts scan`, not automatic at startup. Startup creates the input directory and validates an existing catalog; the potentially heavier JAR inspection/hashing work runs only on administrator request and off the Paper primary thread.
+
+The durable catalog is intentionally separate from Phase 3 policy. It is Guardian-managed deterministic YAML with a strict schema and generated-format ownership: administrators may inspect/edit/version-control it, but arbitrary comments/formatting are not promised to survive a subsequent Guardian rewrite. A scan validates the existing catalog and every candidate before mutation, atomically rewrites only on a successful merge, adds newly discovered exact identities, deduplicates existing hashes, and never removes historical identities merely because an input JAR disappeared.
+
+The catalog supports multiple versions of one mod ID and multiple approved hashes for the same ID/version. It records identity only; it does not make an admission decision. Phase 3 decides whether a catalogued identity is required, optional, allowed, or irrelevant under a particular administrator policy.
 
 Hashing can help detect:
 
 - an unexpected artifact with the same advertised mod ID/version;
 - accidental local modification;
-- installation of a non-approved build.
+- installation of a non-approved or repacked build.
 
 Hashing cannot prove that a hostile Cerberus client honestly hashed what is executing.
 
@@ -1722,6 +1744,30 @@ No client-side secret may be treated as proof of honesty.
 
 ---
 
+## Phase 2.5 — Artifact identity and approved-artifact catalog
+
+**Goal:** Stabilize exact top-level artifact identity before policy semantics consume it.
+
+Implement:
+
+- required protocol-v1 `CAP_ARTIFACT_SHA256` capability;
+- exact 32-byte SHA-256 identity for every top-level `ARCHIVE` manifest entry;
+- deterministic unhashed semantics for `NESTED`, `BUILTIN`, `DIRECTORY`, and `MIXED_OR_UNKNOWN` entries;
+- one cached Loader/environment snapshot per Cerberus process so artifact hashes are not recomputed per network challenge;
+- bounded, inert scanning of administrator-supplied Fabric JARs in `approved-artifacts/`;
+- metadata-derived mod ID/version identity;
+- a durable deterministic `artifacts.yml` supporting multiple versions and multiple hashes per ID/version;
+- add-only merge semantics that retain historical entries after input JAR deletion;
+- explicit asynchronous `/guardian artifacts scan` administration;
+- transactional catalog mutation and startup catalog validation; and
+- protocol/catalog/privacy regression coverage.
+
+Do **not** implement Phase 3 allowlist/denylist, required-mod, profile, LuckPerms, or bypass semantics here. The catalog is identity data, not policy.
+
+**Trust boundary:** SHA-256 verifies the exact artifact bytes reported by a cooperating Cerberus client; it does not independently prove that a hostile/replaced Cerberus client reported those bytes truthfully.
+
+---
+
 ## Phase 3 — Guardian policy engine
 
 **Goal:** Turn normalized client classifications and reported manifests into flexible, deterministic admission decisions.
@@ -1739,7 +1785,7 @@ Implement:
 - version rules;
 - contained/nested-mod semantics;
 - explicit baseline/bootstrap/runtime manifest-entry treatment;
-- optional artifact hashes;
+- exact-artifact policy semantics consuming the Phase 2.5 SHA-256 manifest field and durable artifact catalog;
 - classification-specific actions;
 - explicit decision reasons;
 - validation that rejects contradictory rules rather than relying on hidden precedence;
@@ -1991,20 +2037,13 @@ The following are hard project invariants unless explicitly revised:
 
 The following should remain open until the indicated implementation phase rather than being guessed prematurely:
 
-- exact wire encoding;
-- exact custom payload channel names;
-- maximum protocol payload values;
-- exact timeout duration;
 - exact public-key signature algorithm;
 - server trust-store format in Cerberus;
 - BadWolfMC-only vs broader generic trust onboarding for third-party Guardian servers;
 - key rotation format;
-- exact proxy assertion cryptographic format;
 - exact nested/contained-mod policy DSL;
-- exact artifact hashing rules for directory/development origins;
 - whether signed official Cerberus release identity is adopted;
 - if adopted, its canonical digest/signature algorithm, metadata format, and release-key lifecycle;
-- exact configuration/locale file split and names;
 - exact admission-policy YAML file split/spelling, provided it normalizes to the Section 10 action model;
 - whether named admission profiles support inheritance/composition in v1 or are complete standalone resolved profiles;
 - exact mod-version predicate syntax;
@@ -2074,6 +2113,8 @@ The implementation should re-check current documentation when each phase begins 
   https://maven.fabricmc.net/docs/fabric-loader-0.19.5/net/fabricmc/loader/api/FabricLoader.html
 - Fabric Loader `ModContainer`
   https://maven.fabricmc.net/docs/fabric-loader-0.19.5/net/fabricmc/loader/api/ModContainer.html
+- Fabric Loader `ModOrigin`
+  https://maven.fabricmc.net/docs/fabric-loader-0.19.5/net/fabricmc/loader/api/metadata/ModOrigin.html
 
 ### Geyser/Floodgate
 
@@ -2093,25 +2134,26 @@ The implementation should re-check current documentation when each phase begins 
 
 # 38. Handoff context for the next development chat
 
-**Phase 0 feasibility, Phase 1 Guardian foundation/Protection, and the Phase 2 protocol-v1 implementation/live verification are complete. The next implementation phase is Phase 3 — Guardian policy engine once the final Java 25 clean gate for the Phase 2 closeout hardening source passes.**
+**Phase 0 feasibility, Phase 1 Guardian foundation/Protection, and Phase 2 transport/manifest implementation are complete. Phase 2.5 adds exact artifact identity and the durable approved-artifact catalog before Phase 3 policy work begins.**
 
-Treat this document and the current repository as authoritative. `docs/PHASE_3_HANDOFF.md` is the concise next-phase implementation handoff; `docs/PHASE_2_IMPLEMENTATION.md` and `docs/PHASE_2_VERIFICATION.md` record the protocol-v1 implementation and closeout evidence. BrandBlocker and the BadWolfMC GPLv3 eZProtector fork remain provenance/behavior references only and do not control Phase 3 architecture.
+Treat this document and the current repository as authoritative. `docs/PHASE_2_5_IMPLEMENTATION.md` and `docs/PHASE_2_5_VERIFICATION.md` describe the new artifact-identity boundary; `docs/PHASE_3_HANDOFF.md` is the concise policy-engine handoff that consumes it. BrandBlocker and the BadWolfMC GPLv3 eZProtector fork remain provenance/behavior references only and do not control Phase 3 architecture.
 
 Phase 2 established the production manifest/protocol boundary while preserving the proven transport architecture:
 
 - standalone Paper retains CONFIGURATION client classification plus Cerberus presence/protocol gating, followed by bounded PLAY quarantine for the nonce challenge/response;
 - Guardian-Velocity completes Fabric/Cerberus attestation during its awaited CONFIGURATION lifecycle and remains the preferred BadWolfMC network Admission authority;
 - Guardian-Paper in Velocity authority mode verifies the trusted proxy assertion and does not duplicate client attestation;
-- protocol v1 uses explicit version/capability negotiation, a fresh 16-byte nonce, deterministic canonical serialization, bounded fields/count/depth/payload, and one accepted response per challenge;
-- Cerberus enumerates Loader-known entries through supported Fabric Loader APIs and preserves immediate containing-parent relationships and privacy-safe origin kinds without transmitting filesystem paths;
+- protocol v1 uses explicit version/capability negotiation, a fresh 16-byte nonce, deterministic canonical serialization, bounded fields/count/depth/payload, one accepted response per challenge, and the required `CAP_ARTIFACT_SHA256` capability;
+- Cerberus enumerates Loader-known entries through supported Fabric Loader APIs, preserves immediate containing-parent relationships and privacy-safe origin kinds without transmitting filesystem paths, and includes exact SHA-256 for each top-level archive;
+- `approved-artifacts/` plus the durable add-only `artifacts.yml` catalog provide a separate administrator-facing identity-import workflow without making catalog contents into admission policy;
 - live testing distinguished `CERBERUS_REQUIRED`, `CERBERUS_TIMEOUT`, `CERBERUS_PROTOCOL_UNSUPPORTED`, `MANIFEST_INVALID`, and `CERBERUS_VERIFIED`; and
 - BRIDGE-001 and BRIDGE-002 are retired. BRIDGE-003, BRIDGE-004, and BRIDGE-005 retain their later-phase owners.
 
 The representative BadWolfMC Fabric 26.2 client produced 166 Loader-known entries. The manifest included ordinary top-level archives, built-in Java/Minecraft entries, Fabric Loader, Fabric API plus nested API modules, bundled libraries, and multi-level containment. Phase 3 MUST therefore define an explicit deterministic policy-addressable-entry model rather than assuming every Loader-known entry is an administrator-selected mod or deleting nested entries from consideration.
 
-Phase 3 owns the policy semantics described in Sections 10–11 and the Phase 3 roadmap: default and named profiles, deterministic profile priority, client-class actions, unknown-brand compatibility rules, mod allowlist/denylist behavior, required mods, per-mod rules, unlisted behavior, version rules, contained-mod semantics, baseline/bootstrap/runtime treatment, policy-scoped admission bypasses, optional LuckPerms profile resolution, atomic activation, and files-only validation.
+Phase 3 owns the policy semantics described in Sections 10–11 and the Phase 3 roadmap: default and named profiles, deterministic profile priority, client-class actions, unknown-brand compatibility rules, mod allowlist/denylist behavior, required mods, per-mod rules, unlisted behavior, version rules, exact-hash/catalog consumption, contained-mod semantics, baseline/bootstrap/runtime treatment, policy-scoped admission bypasses, optional LuckPerms profile resolution, atomic activation, and files-only validation.
 
-Do **not** redesign the proven Phase 2 protocol/transport merely to add policy. Structurally valid manifests should cross into the platform-neutral policy layer; protocol/session/integrity failures remain non-bypassable. Raw brand rules remain subordinate `JAVA_UNKNOWN` policy input and cannot turn positively classified Fabric into ordinary `ALLOW` or override trusted Bedrock origin.
+Do **not** redesign the proven Phase 2/2.5 protocol, transport, or artifact catalog merely to add policy. Structurally valid manifests and the immutable catalog model should cross into the platform-neutral policy layer; protocol/session/integrity failures remain non-bypassable. Raw brand rules remain subordinate `JAVA_UNKNOWN` policy input and cannot turn positively classified Fabric into ordinary `ALLOW` or override trusted Bedrock origin.
 
 Do not opportunistically pull Phase 4/5/6 work into Phase 3. In particular:
 
@@ -2135,8 +2177,10 @@ Backend switching was live-tested with Fabric, vanilla, and Bedrock. Admission i
 
 Phase 1 is complete. Guardian's production foundation preserves the distinction between **useful client-policy enforcement** and **unforgeable hostile-client attestation**, while Guardian Protection independently enforces the selected command execution/disclosure controls on Paper without affecting non-player command paths.
 
-Phase 2 has now replaced the synthetic feasibility manifest/validator with protocol v1 and real Fabric Loader state. Live testing on a representative 166-entry Fabric client passed both standalone and Velocity-authoritative happy paths, verified nested/multi-level manifest relationships and privacy minimization, and produced the intended distinct failure semantics for missing Cerberus, incompatible protocol, present-but-silent Cerberus, and malformed protocol data. The final closeout hardening source tightens protocol/mod-ID representation bounds and expands automated adversarial coverage; once its clean Java 25 / Gradle 9.7.1 gate passes, no additional Phase 2 live matrix is required.
+Phase 2 replaced the synthetic feasibility manifest/validator with protocol v1 and real Fabric Loader state. Live testing on a representative 166-entry Fabric client passed both standalone and Velocity-authoritative happy paths, verified nested/multi-level manifest relationships and privacy minimization, and produced the intended distinct failure semantics for missing Cerberus, incompatible protocol, present-but-silent Cerberus, and malformed protocol data.
+
+Phase 2.5 revises that unreleased protocol v1 in place so exact top-level archive SHA-256 is now part of the canonical contract. It adds a bounded, non-executing administrator artifact importer and durable identity catalog while deliberately leaving allow/deny semantics to Phase 3. The trust statement remains unchanged: exact hashes strengthen artifact identification for cooperating Cerberus clients but do not create hostile-client remote attestation.
 
 For BadWolfMC's production topology, Guardian-Velocity remains the preferred admission authority and Guardian-Paper the trusted backend verifier. For non-Velocity deployments, Guardian-Paper remains a supported standalone authority using the hybrid CONFIGURATION + bounded PLAY-quarantine path.
 
-The next implementation task is Phase 3: turn normalized classifications and structurally valid canonical manifests into deterministic, administrator-configurable admission policy without weakening or duplicating the Phase 2 protocol boundary.
+The next implementation task after the Phase 2.5 Java 25 / Gradle 9.7.1 gate is Phase 3: turn normalized classifications, structurally valid canonical manifests, and the durable artifact catalog into deterministic, administrator-configurable admission policy without weakening or duplicating the Phase 2/2.5 protocol boundary.

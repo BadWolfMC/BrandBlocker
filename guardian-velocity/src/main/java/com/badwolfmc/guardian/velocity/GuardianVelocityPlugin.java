@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
 @Plugin(
     id = "guardian",
     name = "Guardian",
-    version = "0.1.0-phase2",
+    version = "0.1.0-phase2.5",
     description = "Guardian Admission for Velocity",
     authors = {"BadWolfMC"},
     dependencies = {

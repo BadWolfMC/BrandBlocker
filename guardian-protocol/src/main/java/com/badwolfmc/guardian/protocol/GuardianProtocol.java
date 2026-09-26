@@ -11,13 +11,15 @@ public final class GuardianProtocol {
     public static final int MAX_VERSION_BYTES = 256;
     public static final int MAX_RELEASE_METADATA_BYTES = 256;
     public static final int MAX_RELATIONSHIP_DEPTH = 16;
+    public static final long MAX_ARTIFACT_BYTES = 512L * 1024L * 1024L;
     public static final int MAX_RESPONSES_PER_CHALLENGE = 1;
     public static final long MAX_HANDSHAKE_MILLIS = 10_000L;
 
     public static final long CAP_CANONICAL_MANIFEST_V1 = 1L;
     public static final long CAP_CONTAINMENT_RELATIONSHIPS = 1L << 1;
     public static final long CAP_ORIGIN_KIND = 1L << 2;
-    public static final long REQUIRED_CAPABILITIES = CAP_CANONICAL_MANIFEST_V1 | CAP_CONTAINMENT_RELATIONSHIPS | CAP_ORIGIN_KIND;
+    public static final long CAP_ARTIFACT_SHA256 = 1L << 3;
+    public static final long REQUIRED_CAPABILITIES = CAP_CANONICAL_MANIFEST_V1 | CAP_CONTAINMENT_RELATIONSHIPS | CAP_ORIGIN_KIND | CAP_ARTIFACT_SHA256;
     public static final long KNOWN_CAPABILITIES = REQUIRED_CAPABILITIES;
 
     public static final int PROXY_ASSERTION_VERSION = 2;

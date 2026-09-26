@@ -27,6 +27,13 @@ public final class ManifestCanonicalizer {
         for(ManifestEntry e:manifest.entries()){
             bounded(e.modId(),GuardianProtocol.MAX_MOD_ID_BYTES,"mod id"); if (!FABRIC_MOD_ID.matcher(e.modId()).matches()) throw new IllegalArgumentException("invalid Fabric mod id: "+e.modId()); bounded(e.version(),GuardianProtocol.MAX_VERSION_BYTES,"mod version");
             if(e.parentModId()!=null) bounded(e.parentModId(),GuardianProtocol.MAX_MOD_ID_BYTES,"parent mod id");
+            boolean requiresArtifactHash = e.parentModId() == null && e.originKind() == OriginKind.ARCHIVE;
+            if (requiresArtifactHash && e.artifactSha256() == null) {
+                throw new IllegalArgumentException("top-level archive is missing SHA-256 artifact identity: " + e.modId());
+            }
+            if (!requiresArtifactHash && e.artifactSha256() != null) {
+                throw new IllegalArgumentException("artifact SHA-256 is only valid for top-level archive entries: " + e.modId());
+            }
             if(byId.put(e.modId(),e)!=null) throw new IllegalArgumentException("duplicate mod id: "+e.modId());
             if(e.modId().equals(e.parentModId())) throw new IllegalArgumentException("mod cannot contain itself: "+e.modId());
             if(requireOrder && previous!=null && previous.compareTo(e.modId())>=0) throw new IllegalArgumentException("manifest entries are not in canonical order"); previous=e.modId();
